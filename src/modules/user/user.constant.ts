@@ -1,4 +1,6 @@
 export const USER_ROLE = {
-  ADMIN: "admin",
-  USER: "user",
+  CUSTOMER: 'customer',
+  SELLER: 'seller',
+  DELIVERY_PARTNER: 'delivery_partner',
+  ADMIN: 'admin',
 } as const;

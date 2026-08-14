@@ -1,49 +1,54 @@
-import { Router } from "express";
-import userController from "./user.controller";
-import validateRequest from "../../middleware/validateRequest";
-import { userValidation } from "./user.validation";
-import auth from "../../middleware/auth";
-import { USER_ROLE } from "./user.constant";
-import { upload } from "../../middleware/multer.middleware";
+import { Router } from 'express';
+import userController from './user.controller';
+import validateRequest from '../../middleware/validateRequest';
+import { userValidation } from './user.validation';
+import { USER_ROLE } from './user.constant';
+import { upload } from '../../middleware/multer.middleware';
+import { auth, authenticate } from '../../middleware/auth';
 
 const router = Router();
 
 router.post(
-  "/register",
+  '/register',
   validateRequest(userValidation.userValidationSchema),
-  userController.registerUser
+  userController.registerUser,
 );
 
 router.post(
-  "/verify-email",
-  auth(USER_ROLE.ADMIN, USER_ROLE.USER),
-  userController.verifyEmail
+  '/verify-email',
+  authenticate,
+  auth(USER_ROLE.ADMIN, USER_ROLE.CUSTOMER, USER_ROLE.SELLER, USER_ROLE.DELIVERY_PARTNER),
+  userController.verifyEmail,
 );
 
 router.post(
-  "/resend-otp",
-  auth(USER_ROLE.ADMIN, USER_ROLE.USER),
-  userController.resendOtpCode
+  '/resend-otp',
+  authenticate,
+  auth(USER_ROLE.ADMIN, USER_ROLE.CUSTOMER, USER_ROLE.SELLER, USER_ROLE.DELIVERY_PARTNER),
+  userController.resendOtpCode,
 );
 
-router.get("/all-users", userController.getAllUsers);
+router.get('/all-users', userController.getAllUsers);
 router.get(
-  "/my-profile",
-  auth(USER_ROLE.ADMIN, USER_ROLE.USER),
-  userController.getMyProfile
+  '/my-profile',
+  authenticate,
+  auth(USER_ROLE.ADMIN, USER_ROLE.CUSTOMER, USER_ROLE.SELLER, USER_ROLE.DELIVERY_PARTNER),
+  userController.getMyProfile,
 );
 
 router.put(
-  "/update-profile",
-  upload.single("image"),
-  auth(USER_ROLE.ADMIN, USER_ROLE.USER),
-  userController.updateUserProfile
+  '/update-profile',
+  upload.single('image'),
+  authenticate,
+  auth(USER_ROLE.ADMIN, USER_ROLE.CUSTOMER, USER_ROLE.SELLER, USER_ROLE.DELIVERY_PARTNER),
+  userController.updateUserProfile,
 );
 
 router.get(
-  "/admin_id",
-  auth(USER_ROLE.ADMIN, USER_ROLE.USER),
-  userController.getAdminId
+  '/admin_id',
+  authenticate,
+  auth(USER_ROLE.ADMIN, USER_ROLE.CUSTOMER, USER_ROLE.SELLER, USER_ROLE.DELIVERY_PARTNER),
+  userController.getAdminId,
 );
 
 const userRouter = router;

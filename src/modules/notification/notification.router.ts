@@ -1,11 +1,12 @@
-import { Router } from "express";
-import { getAllNotifications, markAllAsRead } from "./notification.controller";
-import auth from "../../middleware/auth";
+import { Router } from 'express';
+import { USER_ROLE } from '../user/user.constant';
+import { getAllNotifications, markAllAsRead } from './notification.controller';
+import { auth, authenticate } from '../../middleware/auth';
 
 const router = Router();
 
-router.get("/", auth("admin"), getAllNotifications);
-router.patch("/read/all", markAllAsRead);
+router.get('/', authenticate, auth(USER_ROLE.ADMIN), getAllNotifications);
+router.patch('/read/all', markAllAsRead);
 
 const notificationRouter = router;
 export default notificationRouter;

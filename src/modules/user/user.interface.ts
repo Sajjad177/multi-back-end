@@ -1,5 +1,5 @@
-import { Model } from "mongoose";
-import { USER_ROLE } from "./user.constant";
+import { Model } from 'mongoose';
+import { USER_ROLE } from './user.constant';
 
 export interface IUser {
   _id: string;
@@ -12,7 +12,7 @@ export interface IUser {
   location: string;
   postalCode: string;
   dateOfBirth: Date;
-  role: string;
+  role: TUserRole;
   image: {
     public_id: string;
     url: string;
@@ -30,4 +30,4 @@ export interface userModel extends Model<IUser> {
   isUserExistById(_id: string): Promise<IUser | null>;
 }
 
-export type TUserRole = keyof typeof USER_ROLE;
+export type TUserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];

@@ -1,33 +1,46 @@
-import { NextFunction, Request, Response } from "express";
-import { StatusCodes } from "http-status-codes";
-import config from "../config";
-import AppError from "../errors/AppError";
-import logger from "../logger";
-import { verifyToken } from "../utils/tokenGenerate";
+import { NextFunction, Request, Response } from 'express';
+import { StatusCodes } from 'http-status-codes';
+import config from '../config';
+import AppError from '../errors/AppError';
+import { verifyToken } from '../utils/tokenGenerate';
+import { TUserRole } from '../modules/user/user.interface';
 
-const auth = (...roles: string[]) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const extractedToken = req.headers.authorization;
-      const token = extractedToken?.split(" ")[1];
-      if (!token) {
-        throw new AppError("Invalid token", StatusCodes.UNAUTHORIZED);
-      }
+export const authenticate = (req: Request, res: Response, next: NextFunction) => {
+  const authorization = req.headers.authorization;
 
-      const verifyUserData = verifyToken(token, config.JWT_SECRET as string);
+  if (!authorization?.startsWith('Bearer ')) {
+    return next(new AppError('Authentication required', StatusCodes.UNAUTHORIZED));
+  }
 
-      req.user = verifyUserData;
+  const token = authorization.split(' ')[1];
 
-      if (roles.length && !roles.includes(verifyUserData.role)) {
-        throw new AppError("You are not authorized!", StatusCodes.UNAUTHORIZED);
-      }
+  if (!token) {
+    return next(new AppError('Authentication required', StatusCodes.UNAUTHORIZED));
+  }
 
-      next();
-    } catch (error: any) {
-      logger.error("Authorization error:", error);
-      throw new AppError("You are not authorized", StatusCodes.UNAUTHORIZED);
-    }
-  };
+  try {
+    const decoded = verifyToken(token, config.JWT_SECRET as string);
+
+    req.user = decoded;
+
+    next();
+  } catch {
+    next(new AppError('Invalid or expired token', StatusCodes.UNAUTHORIZED));
+  }
 };
 
-export default auth;
+export const auth = (...allowedRoles: TUserRole[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(new AppError('Authentication required', StatusCodes.UNAUTHORIZED));
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return next(
+        new AppError('You do not have permission to perform this action', StatusCodes.FORBIDDEN),
+      );
+    }
+
+    next();
+  };
+};

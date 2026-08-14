@@ -1,29 +1,24 @@
-import bcrypt from "bcrypt";
-import { StatusCodes } from "http-status-codes";
-import config from "../../config";
-import AppError from "../../errors/AppError";
-import {
-  deleteFromCloudinary,
-  uploadToCloudinary,
-} from "../../utils/cloudinary";
-import sendEmail from "../../utils/sendEmail";
-import { createToken } from "../../utils/tokenGenerate";
-import verificationCodeTemplate from "../../utils/verificationCodeTemplate";
-import { IUser } from "./user.interface";
-import { User } from "./user.model";
+import bcrypt from 'bcrypt';
+import { StatusCodes } from 'http-status-codes';
+import config from '../../config';
+import AppError from '../../errors/AppError';
+import { deleteFromCloudinary, uploadToCloudinary } from '../../utils/cloudinary';
+import sendEmail from '../../utils/sendEmail';
+import { createToken } from '../../utils/tokenGenerate';
+import verificationCodeTemplate from '../../utils/verificationCodeTemplate';
+import { USER_ROLE } from './user.constant';
+import { IUser } from './user.interface';
+import { User } from './user.model';
 
 const registerUser = async (payload: IUser) => {
   const existingUser = await User.isUserExistByEmail(payload.email);
   if (existingUser && existingUser.isVerified) {
-    throw new AppError("User already exists", StatusCodes.CONFLICT);
+    throw new AppError('User already exists', StatusCodes.CONFLICT);
   }
 
   // Password check
   if (payload.password.length < 6) {
-    throw new AppError(
-      "Password must be at least 6 characters long",
-      StatusCodes.BAD_REQUEST
-    );
+    throw new AppError('Password must be at least 6 characters long', StatusCodes.BAD_REQUEST);
   }
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -37,7 +32,7 @@ const registerUser = async (payload: IUser) => {
     result = (await User.findOneAndUpdate(
       { email: existingUser.email },
       { otp: hashedOtp, otpExpires },
-      { new: true }
+      { new: true },
     )) as IUser;
   } else {
     // Case 3: new user
@@ -52,7 +47,7 @@ const registerUser = async (payload: IUser) => {
   // Send email
   await sendEmail({
     to: result.email,
-    subject: "Verify your email",
+    subject: 'Verify your email',
     html: verificationCodeTemplate(otp),
   });
 
@@ -66,13 +61,13 @@ const registerUser = async (payload: IUser) => {
   const accessToken = createToken(
     JwtToken,
     config.JWT_SECRET as string,
-    config.JWT_EXPIRES_IN as string
+    config.JWT_EXPIRES_IN as string,
   );
 
   const refreshToken = createToken(
     JwtToken,
     config.refreshTokenSecret as string,
-    config.jwtRefreshTokenExpiresIn as string
+    config.jwtRefreshTokenExpiresIn as string,
   );
 
   return {
@@ -89,51 +84,45 @@ const registerUser = async (payload: IUser) => {
 
 const verifyEmail = async (email: string, payload: string) => {
   const { otp }: any = payload;
-  if (!otp) throw new Error("OTP is required");
+  if (!otp) throw new Error('OTP is required');
 
   const existingUser = await User.findOne({ email });
   if (!existingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND
-    );
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
 
   if (!existingUser.otp || !existingUser.otpExpires) {
-    throw new AppError("OTP not requested or expired", StatusCodes.BAD_REQUEST);
+    throw new AppError('OTP not requested or expired', StatusCodes.BAD_REQUEST);
   }
 
   if (existingUser.otpExpires < new Date()) {
-    throw new AppError("OTP has expired", StatusCodes.BAD_REQUEST);
+    throw new AppError('OTP has expired', StatusCodes.BAD_REQUEST);
   }
 
   if (existingUser.isVerified === true) {
-    throw new AppError("User already verified", StatusCodes.CONFLICT);
+    throw new AppError('User already verified', StatusCodes.CONFLICT);
   }
 
   const isOtpMatched = await bcrypt.compare(otp.toString(), existingUser.otp);
-  if (!isOtpMatched) throw new AppError("Invalid OTP", StatusCodes.BAD_REQUEST);
+  if (!isOtpMatched) throw new AppError('Invalid OTP', StatusCodes.BAD_REQUEST);
 
   const result = await User.findOneAndUpdate(
     { email },
     {
       isVerified: true,
-      $unset: { otp: "", otpExpires: "" },
+      $unset: { otp: '', otpExpires: '' },
     },
-    { new: true }
-  ).select("username email role");
+    { new: true },
+  ).select('username email role');
   return result;
 };
 
 const resendOtpCode = async (email: string) => {
   const existingUser = await User.findOne({ email });
   if (!existingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND
-    );
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
 
   if (existingUser.isVerified === true) {
-    throw new AppError("User already verified", StatusCodes.CONFLICT);
+    throw new AppError('User already verified', StatusCodes.CONFLICT);
   }
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -146,58 +135,50 @@ const resendOtpCode = async (email: string) => {
       otp: hashedOtp,
       otpExpires,
     },
-    { new: true }
-  ).select("username email role");
+    { new: true },
+  ).select('username email role');
 
   await sendEmail({
     to: existingUser.email,
-    subject: "Verify your email",
+    subject: 'Verify your email',
     html: verificationCodeTemplate(otp),
   });
   return result;
 };
 
 const getAllUsers = async () => {
-  const result = await User.find().select(
-    "username firstName lastName email role"
-  );
+  const result = await User.find().select('username firstName lastName email role');
   return result;
 };
 
 const getAdminId = async () => {
-  const admin = await User.findOne({ role: "admin" }).select("_id");
+  const admin = await User.findOne({ role: USER_ROLE.ADMIN }).select('_id');
   return admin;
 };
 
 const getMyProfile = async (email: string) => {
   const existingUser = await User.findOne({ email });
   if (!existingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND
-    );
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
 
   const result = await User.findOne({ email }).select(
-    "-password -otp -otpExpires -resetPasswordOtp -resetPasswordOtpExpires"
+    '-password -otp -otpExpires -resetPasswordOtp -resetPasswordOtpExpires',
   );
 
   return result;
 };
 
 const updateUserProfile = async (payload: any, email: string, file: any) => {
-  const user = await User.findOne({ email }).select("image");
+  const user = await User.findOne({ email }).select('image');
   if (!user)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND
-    );
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
 
   // eslint-disable-next-line prefer-const
   let updateData: any = { ...payload };
   let oldImagePublicId: string | undefined;
 
   if (file) {
-    const uploadResult = await uploadToCloudinary(file.path, "users");
+    const uploadResult = await uploadToCloudinary(file.path, 'users');
     oldImagePublicId = user.image?.public_id;
 
     updateData.image = {
@@ -208,9 +189,7 @@ const updateUserProfile = async (payload: any, email: string, file: any) => {
 
   const result = await User.findOneAndUpdate({ email }, updateData, {
     new: true,
-  }).select(
-    "-password -otp -otpExpires -resetPasswordOtp -resetPasswordOtpExpires"
-  );
+  }).select('-password -otp -otpExpires -resetPasswordOtp -resetPasswordOtpExpires');
 
   if (file && oldImagePublicId) {
     await deleteFromCloudinary(oldImagePublicId);
