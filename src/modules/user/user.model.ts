@@ -37,7 +37,6 @@ const userSchema = new Schema<IUser, IUserModel>(
 
     password: {
       type: String,
-      required: [true, 'Password is required'],
       select: false,
     },
 
@@ -136,6 +135,10 @@ const userSchema = new Schema<IUser, IUserModel>(
 );
 
 userSchema.pre('save', async function (next) {
+  if (!this.isModified('password') || !this.password) {
+    return next();
+  }
+
   this.password = await bcrypt.hash(this.password, Number(config.bcryptSaltRounds));
 
   next();

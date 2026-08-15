@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { IJoinAsSeller } from './joinAsSeller.interface';
+import { BUSINESS_TYPE, DOCUMENT_TYPE, JOIN_SELLER_STATUS } from './joinAsSeller.constant';
 
 const businessAddressSchema = new Schema(
   {
@@ -31,8 +32,8 @@ const documentSchema = new Schema(
   {
     type: {
       type: String,
+      enum: Object.values(DOCUMENT_TYPE),
       required: true,
-      enum: ['NATIONAL_ID', 'PASSPORT', 'BUSINESS_LICENSE', 'TAX_ID'],
     },
     publicId: {
       type: String,
@@ -57,16 +58,30 @@ const joinAsSellerSchema = new Schema<IJoinAsSeller>(
       index: true,
     },
 
+    firstName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    lastName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     businessName: {
       type: String,
       required: true,
       trim: true,
     },
-
     businessType: {
       type: String,
+      enum: Object.values(BUSINESS_TYPE),
       required: true,
-      trim: true,
     },
 
     ownerName: {
@@ -74,37 +89,30 @@ const joinAsSellerSchema = new Schema<IJoinAsSeller>(
       required: true,
       trim: true,
     },
-
     phone: {
       type: String,
       required: true,
       trim: true,
     },
-
     businessAddress: {
       type: businessAddressSchema,
       required: true,
     },
-
     description: {
       type: String,
       trim: true,
     },
-
     documents: {
       type: [documentSchema],
       required: true,
       default: [],
     },
-
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'],
-      default: 'PENDING',
-      required: true,
+      enum: Object.values(JOIN_SELLER_STATUS),
+      default: JOIN_SELLER_STATUS.PENDING,
       index: true,
     },
-
     rejectionReason: {
       type: String,
       trim: true,
@@ -112,6 +120,7 @@ const joinAsSellerSchema = new Schema<IJoinAsSeller>(
   },
   {
     timestamps: true,
+    versionKey: false,
   },
 );
 
