@@ -21,6 +21,7 @@ export interface IUser {
     otpHash?: string;
     expiresAt?: Date;
     attempts: number;
+    lastSentAt?: Date;
   };
   passwordReset?: {
     otpHash?: string;

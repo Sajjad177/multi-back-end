@@ -1,275 +1,209 @@
-import bcrypt from "bcrypt";
-import { StatusCodes } from "http-status-codes";
-import config from "../../config";
-import AppError from "../../errors/AppError";
-import { companyName } from "../../lib/globalType";
-import sendEmail from "../../utils/sendEmail";
-import { createToken, verifyToken } from "../../utils/tokenGenerate";
-import verificationCodeTemplate from "../../utils/verificationCodeTemplate";
-import { User } from "../user/user.model";
+import bcrypt from 'bcrypt';
+import { StatusCodes } from 'http-status-codes';
+import config from '../../config';
+import AppError from '../../errors/AppError';
+import { companyName } from '../../lib/globalType';
+import sendEmail from '../../utils/sendEmail';
+import { createToken, verifyToken } from '../../utils/tokenGenerate';
+import verificationCodeTemplate from '../../utils/verificationCodeTemplate';
+import { User } from '../user/user.model';
+import { generateOtp, generateTokens, verifyRefreshToken } from '../../helper/helper';
 
 const login = async (payload: { email: string; password: string }) => {
   const { email, password } = payload;
 
   const user = await User.isUserExistByEmail(email);
-  if (!user)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND,
-    );
+  if (!user) {
+    throw new AppError('Invalid email or password', StatusCodes.UNAUTHORIZED);
+  }
 
-  if (user.isVerified === false)
-    throw new AppError("Please verify your email", StatusCodes.UNAUTHORIZED);
+  if (!user.isVerified) {
+    throw new AppError('Please verify your email before logging in', StatusCodes.UNAUTHORIZED);
+  }
+
+  if (user.status !== 'active') {
+    throw new AppError('Your account is not active', StatusCodes.FORBIDDEN);
+  }
 
   const isPasswordValid = await User.isPasswordMatch(password, user.password);
-  if (!isPasswordValid)
-    throw new AppError("Invalid password", StatusCodes.UNAUTHORIZED);
+  if (!isPasswordValid) {
+    throw new AppError('Invalid email or password', StatusCodes.UNAUTHORIZED);
+  }
 
-  const tokenPayload = {
-    id: user._id,
-    email: user.email,
-    role: user.role,
-  };
-
-  const accessToken = createToken(
-    tokenPayload,
-    config.JWT_SECRET as string,
-    config.JWT_EXPIRES_IN as string,
-  );
-
-  const refreshToken = createToken(
-    tokenPayload,
-    config.refreshTokenSecret as string,
-    config.jwtRefreshTokenExpiresIn as string,
-  );
+  const tokens = generateTokens(user);
 
   return {
-    accessToken,
-    refreshToken,
+    ...tokens,
     user: {
-      id: user._id,
-      email: user.email,
-      role: user.role,
+      _id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
-      image: user.image,
-      phone: user.phone,
-      street: user.street,
-      location: user.location,
-      postalCode: user.postalCode,
-      dateOfBirth: user.dateOfBirth,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
     },
   };
 };
 
 const refreshToken = async (token: string) => {
+  if (!token) {
+    throw new AppError('Refresh token is required', StatusCodes.UNAUTHORIZED);
+  }
+
   let decodedToken;
 
   try {
-    decodedToken = verifyToken(token, config.refreshTokenSecret as string);
-
-    if (!decodedToken) {
-      throw new AppError("Invalid token", StatusCodes.UNAUTHORIZED);
-    }
-  } catch (error) {
-    throw new AppError("You are not authorized", StatusCodes.UNAUTHORIZED);
+    decodedToken = verifyRefreshToken(token);
+  } catch {
+    throw new AppError('Invalid or expired refresh token', StatusCodes.UNAUTHORIZED);
   }
 
-  const email = decodedToken.email as string;
-  const userData = await User.findOne({ email });
-
-  if (!userData) {
-    throw new Error("No account found with the provided credentials.");
+  if (!decodedToken?.userId) {
+    throw new AppError('Invalid refresh token', StatusCodes.UNAUTHORIZED);
   }
 
-  const JwtPayload = {
-    userId: userData._id,
-    role: userData.role,
-    email: userData.email,
-  };
+  const user = await User.findById(decodedToken.userId).select('_id role status isVerified');
+  if (!user) {
+    throw new AppError('User account not found', StatusCodes.UNAUTHORIZED);
+  }
 
-  const accessToken = createToken(
-    JwtPayload,
-    config.JWT_SECRET as string,
-    config.JWT_EXPIRES_IN as string,
-  );
+  if (user.status !== 'active') {
+    throw new AppError('Your account is not active', StatusCodes.FORBIDDEN);
+  }
 
-  return { accessToken };
+  if (!user.isVerified) {
+    throw new AppError('Please verify your email', StatusCodes.UNAUTHORIZED);
+  }
+
+  const tokens = generateTokens(user);
+  return tokens;
 };
 
 const forgotPassword = async (email: string) => {
-  if (!email) throw new Error("Email is required");
+  const normalizedEmail = email.trim().toLowerCase();
 
-  const isExistingUser = await User.isUserExistByEmail(email);
-  if (!isExistingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND,
-    );
+  const user = await User.isUserExistByEmail(normalizedEmail);
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedOtp = await bcrypt.hash(otp, 10);
-  const otpExpires = new Date(Date.now() + 5 * 60 * 1000);
+  if (!user || !user.isVerified) {
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
+  }
 
-  await User.findByIdAndUpdate(
-    isExistingUser._id,
-    {
-      resetPasswordOtp: hashedOtp,
-      resetPasswordOtpExpires: otpExpires,
+  const { otp, hashedOtp, otpExpires } = await generateOtp();
+  await User.findByIdAndUpdate(user._id, {
+    passwordReset: {
+      otpHash: hashedOtp,
+      expiresAt: otpExpires,
+      attempts: 0,
     },
-    { new: true },
-  );
-
-  await sendEmail({
-    to: isExistingUser.email,
-    subject: "Reset your password",
-    html: verificationCodeTemplate(otp),
   });
 
-  const JwtToken = {
-    userId: isExistingUser._id,
-    email: isExistingUser.email,
-    role: isExistingUser.role,
-  };
-
-  const accessToken = createToken(
-    JwtToken,
-    config.JWT_SECRET as string,
-    config.JWT_EXPIRES_IN as string,
-  );
-
-  return { accessToken };
+  await sendEmail({
+    to: user.email,
+    subject: 'Reset your Shoppy password',
+    html: verificationCodeTemplate(otp),
+  });
 };
 
 const resendForgotOtpCode = async (email: string) => {
-  const existingUser = await User.isUserExistByEmail(email);
-  if (!existingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND,
-    );
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await User.isUserExistByEmail(normalizedEmail);
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedOtp = await bcrypt.hash(otp, 10);
-  const otpExpires = new Date(Date.now() + 5 * 60 * 1000);
+  if (!user || !user.isVerified) {
+    return;
+  }
 
-  await User.findOneAndUpdate(
-    { email },
-    {
-      resetPasswordOtp: hashedOtp,
-      resetPasswordOtpExpires: otpExpires,
+  if (!user.passwordReset?.otpHash) {
+    throw new AppError('Please request a password reset first.', StatusCodes.BAD_REQUEST);
+  }
+
+  const { otp, hashedOtp, otpExpires } = await generateOtp();
+  await User.findByIdAndUpdate(user._id, {
+    passwordReset: {
+      otpHash: hashedOtp,
+      expiresAt: otpExpires,
+      attempts: 0,
     },
-    { new: true },
-  ).select("username email role");
+  });
 
   await sendEmail({
-    to: existingUser.email,
+    to: user.email,
     subject: `${companyName} - Password Reset OTP`,
     html: verificationCodeTemplate(otp),
   });
-  // return result;
 };
 
 const verifyOtp = async (email: string, otp: string) => {
   if (!otp) {
-    throw new AppError("OTP is required", StatusCodes.BAD_REQUEST);
+    throw new AppError('OTP is required', StatusCodes.BAD_REQUEST);
   }
 
-  const isExistingUser = await User.isUserExistByEmail(email);
-  if (!isExistingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND,
-    );
-
-  if (
-    !isExistingUser.resetPasswordOtp ||
-    !isExistingUser.resetPasswordOtpExpires
-  ) {
-    throw new AppError(
-      "Password reset OTP not requested or has expired",
-      StatusCodes.BAD_REQUEST,
-    );
+  const user = await User.isUserExistByEmail(email);
+  if (!user) {
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
   }
 
-  if (isExistingUser.resetPasswordOtpExpires < new Date()) {
-    throw new AppError(
-      "Password reset OTP has expired",
-      StatusCodes.BAD_REQUEST,
-    );
+  if (!user.passwordReset?.otpHash || !user.passwordReset?.expiresAt) {
+    throw new AppError('Password reset OTP not requested or has expired', StatusCodes.BAD_REQUEST);
   }
 
-  const isOtpMatched = await bcrypt.compare(
-    otp.toString(),
-    isExistingUser.resetPasswordOtp,
-  );
-  if (!isOtpMatched) throw new Error("Invalid OTP");
+  if (user.passwordReset.expiresAt < new Date()) {
+    throw new AppError('Password reset OTP has expired', StatusCodes.BAD_REQUEST);
+  }
 
-  await User.findByIdAndUpdate(
-    isExistingUser._id,
-    {
-      resetPasswordOtp: "",
-      resetPasswordOtpExpires: "",
+  const isOtpMatched = await bcrypt.compare(otp, user.passwordReset.otpHash);
+  if (!isOtpMatched) {
+    throw new AppError('Invalid OTP', StatusCodes.BAD_REQUEST);
+  }
+
+  await User.findByIdAndUpdate(user._id, {
+    $unset: {
+      'passwordReset.otpHash': 1,
+      'passwordReset.expiresAt': 1,
     },
-    { new: true },
-  );
+  });
 
-  const JwtToken = {
-    userId: isExistingUser._id,
-    email: isExistingUser.email,
-    role: isExistingUser.role,
-  };
-
-  const accessToken = createToken(
-    JwtToken,
-    config.JWT_SECRET as string,
-    config.JWT_EXPIRES_IN as string,
-  );
-
-  return { accessToken };
+  const token = generateTokens(user);
+  return token.refreshToken;
 };
 
-const resetPassword = async (
-  payload: { newPassword: string },
-  email: string,
-) => {
-  if (!payload.newPassword)
-    throw new AppError("Password is required", StatusCodes.BAD_REQUEST);
+const resetPassword = async (newPassword: string, userId: string) => {
+  if (!newPassword) {
+    throw new AppError('New password is required', StatusCodes.BAD_REQUEST);
+  }
 
-  const isExistingUser = await User.isUserExistByEmail(email);
-  if (!isExistingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND,
-    );
+  const user = await User.isUserExistById(userId);
+  if (!user) {
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
+  }
 
-  const isSamePassword = await bcrypt.compare(
-    payload.newPassword,
-    isExistingUser.password,
-  );
+  // Check new password against current password
+  const isSamePassword = await User.isPasswordMatch(newPassword, user.password);
   if (isSamePassword) {
     throw new AppError(
-      "New password cannot be the same as the current password",
+      'New password cannot be the same as the current password',
       StatusCodes.BAD_REQUEST,
     );
   }
 
-  const hashedPassword = await bcrypt.hash(
-    payload.newPassword,
-    Number(config.bcryptSaltRounds),
-  );
-
-  const result = await User.findOneAndUpdate(
-    { email },
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(newPassword, Number(config.bcryptSaltRounds));
+  const result = await User.findByIdAndUpdate(
+    user._id,
     {
-      password: hashedPassword,
-      otp: undefined,
-      otpExpires: undefined,
+      $set: {
+        password: hashedPassword,
+        passwordChangedAt: new Date(),
+      },
+      $unset: {
+        'passwordReset.verifiedAt': 1,
+        'passwordReset.otpHash': 1,
+        'passwordReset.expiresAt': 1,
+      },
     },
-    { new: true },
-  ).select(
-    "-password -otp -otpExpires -resetPasswordOtp -resetPasswordOtpExpires",
-  );
+    {
+      new: true,
+    },
+  ).select('_id firstName lastName email role status isVerified avatar');
 
   return result;
 };
@@ -279,48 +213,49 @@ const changePassword = async (
     currentPassword: string;
     newPassword: string;
   },
-  email: string,
+  userId: string,
 ) => {
   const { currentPassword, newPassword } = payload;
-  if (!currentPassword || !newPassword) {
+
+  const user = await User.isUserExistById(userId);
+
+  if (!user) {
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
+  }
+
+  // Verify current password
+  const isCurrentPasswordValid = await User.isPasswordMatch(currentPassword, user.password);
+
+  if (!isCurrentPasswordValid) {
+    throw new AppError('Current password is incorrect', StatusCodes.BAD_REQUEST);
+  }
+
+  // Prevent using the same password
+  const isSamePassword = await User.isPasswordMatch(newPassword, user.password);
+
+  if (isSamePassword) {
     throw new AppError(
-      "Current and new passwords are required",
+      'New password cannot be the same as the current password',
       StatusCodes.BAD_REQUEST,
     );
   }
 
-  const isExistingUser = await User.isUserExistByEmail(email);
-  if (!isExistingUser)
-    throw new AppError(
-      "No account found with the provided credentials.",
-      StatusCodes.NOT_FOUND,
-    );
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(newPassword, Number(config.bcryptSaltRounds));
 
-  const isPasswordMatched = await User.isPasswordMatch(
-    currentPassword,
-    isExistingUser.password,
-  );
-
-  if (!isPasswordMatched)
-    throw new AppError(
-      "Current password is incorrect",
-      StatusCodes.BAD_REQUEST,
-    );
-
-  const hashedPassword = await bcrypt.hash(
-    newPassword,
-    Number(config.bcryptSaltRounds),
-  );
-
-  const result = await User.findOneAndUpdate(
-    { email },
+  // Update password
+  const result = await User.findByIdAndUpdate(
+    user._id,
     {
-      password: hashedPassword,
+      $set: {
+        password: hashedPassword,
+        passwordChangedAt: new Date(),
+      },
     },
-    { new: true },
-  ).select(
-    "-password -otp -otpExpires -resetPasswordOtp -resetPasswordOtpExpires",
-  );
+    {
+      new: true,
+    },
+  ).select('_id firstName lastName email role status isVerified avatar');
 
   return result;
 };

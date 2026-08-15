@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import authController from './auth.controller';
 import validateRequest from '../../middleware/validateRequest';
-import { authValidationSchema } from './auth.validation';
+import { authValidationSchema, forgotPasswordLimiter } from './auth.validation';
 import { USER_ROLE } from '../user/user.constant';
 import { loginLimiter } from '../../middleware/security';
 import { auth, authenticate } from '../../middleware/auth';
@@ -15,11 +15,15 @@ router.post(
   authController.login,
 );
 
+router.post('/logout', authController.logout);
+
 router.post('/refresh-token', authController.refreshToken);
 router.post('/forgot-password', authController.forgotPassword);
 
 router.post(
   '/resend-forgot-otp',
+  forgotPasswordLimiter,
+  validateRequest(authValidationSchema.resendForgotOtpSchema),
   authenticate,
   auth(USER_ROLE.ADMIN, USER_ROLE.CUSTOMER, USER_ROLE.SELLER, USER_ROLE.DELIVERY_PARTNER),
   authController.resendForgotOtpCode,
@@ -41,6 +45,7 @@ router.post(
 
 router.post(
   '/change-password',
+  validateRequest(authValidationSchema.changePasswordSchema),
   authenticate,
   auth(USER_ROLE.ADMIN, USER_ROLE.CUSTOMER, USER_ROLE.SELLER, USER_ROLE.DELIVERY_PARTNER),
   authController.changePassword,

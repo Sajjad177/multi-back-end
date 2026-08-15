@@ -2,7 +2,8 @@ import bcrypt from 'bcrypt';
 import { Response } from 'express';
 import config from '../config';
 import { IUser } from '../modules/user/user.interface';
-import { createToken } from '../utils/tokenGenerate';
+import { createToken, verifyToken } from '../utils/tokenGenerate';
+import { JwtPayload } from 'jsonwebtoken';
 
 export const generateTokens = (user: any) => {
   const tokenPayload = {
@@ -27,6 +28,10 @@ export const generateTokens = (user: any) => {
     accessToken,
     refreshToken,
   };
+};
+
+export const verifyRefreshToken = (token: string): JwtPayload => {
+  return verifyToken(token, config.refreshTokenSecret as string) as JwtPayload;
 };
 
 export const generateOtp = async () => {
@@ -56,11 +61,17 @@ export const sanitizeUser = (user: IUser) => {
   };
 };
 
+const refreshTokenCookieOptions = {
+  httpOnly: true,
+  secure: config.NODE_ENV === 'production',
+  sameSite: config.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 export const setRefreshTokenCookie = (res: Response, refreshToken: string) => {
-  res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: config.NODE_ENV === 'production',
-    sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  res.cookie('refreshToken', refreshToken, refreshTokenCookieOptions);
+};
+
+export const clearRefreshTokenCookie = (res: Response) => {
+  res.clearCookie('refreshToken', refreshTokenCookieOptions);
 };

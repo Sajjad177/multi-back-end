@@ -17,3 +17,9 @@ const userValidationSchema = z.object({
 export const userValidation = {
   userValidationSchema,
 };
+
+export const verifyEmailSchema = z.object({
+  body: z.object({
+    otp: z.string().regex(/^\d{6}$/, 'OTP must be a 6-digit number'),
+  }),
+});

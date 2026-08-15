@@ -2,14 +2,12 @@ import { StatusCodes } from 'http-status-codes';
 import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import userService from './user.service';
-import config from '../../config';
 import { setRefreshTokenCookie } from '../../helper/helper';
 
 const registerUser = catchAsync(async (req, res) => {
   const result = await userService.registerUser(req.body);
 
   const { accessToken, refreshToken } = result.token;
-
   setRefreshTokenCookie(res, refreshToken);
 
   sendResponse(res, {

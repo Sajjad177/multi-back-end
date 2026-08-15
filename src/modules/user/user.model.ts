@@ -1,7 +1,6 @@
 import bcrypt from 'bcrypt';
 import { model, Schema } from 'mongoose';
 import config from '../../config';
-import { applyEncryption } from '../../middleware/encryptionMiddleware';
 import { IUser, userModel } from './user.interface';
 import { USER_ROLE, USER_STATUS } from './user.constant';
 
@@ -96,6 +95,10 @@ const userSchema = new Schema<IUser, userModel>(
         type: Number,
         default: 0,
         min: 0,
+        select: false,
+      },
+      lastSentAt: {
+        type: Date,
         select: false,
       },
     },

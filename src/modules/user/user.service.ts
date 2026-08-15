@@ -9,6 +9,8 @@ import { IUser } from './user.interface';
 import { User } from './user.model';
 import { generateOtp, generateTokens, sanitizeUser } from '../../helper/helper';
 
+const RESEND_COOL_DOWN_SECONDS = 60;
+
 const registerUser = async (payload: IUser) => {
   const email = payload.email.toLowerCase().trim();
   const existingUser = await User.isUserExistByEmail(email);
@@ -71,68 +73,153 @@ const registerUser = async (payload: IUser) => {
     user: sanitizeUser(user),
   };
 };
-const verifyEmail = async (email: string, payload: string) => {
-  const { otp }: any = payload;
-  if (!otp) throw new Error('OTP is required');
+const verifyEmail = async (email: string, payload: { otp: string }) => {
+  const { otp } = payload;
 
-  const existingUser = await User.findOne({ email });
-  if (!existingUser)
+  const user = await User.findOne({
+    email: email.toLowerCase().trim(),
+  }).select('+emailVerification.otpHash +emailVerification.expiresAt +emailVerification.attempts');
+
+  if (!user) {
     throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
-
-  if (!existingUser.otp || !existingUser.otpExpires) {
-    throw new AppError('OTP not requested or expired', StatusCodes.BAD_REQUEST);
   }
 
-  if (existingUser.otpExpires < new Date()) {
-    throw new AppError('OTP has expired', StatusCodes.BAD_REQUEST);
+  if (user.isVerified) {
+    throw new AppError('Email is already verified.', StatusCodes.CONFLICT);
   }
 
-  if (existingUser.isVerified === true) {
-    throw new AppError('User already verified', StatusCodes.CONFLICT);
+  const verification = user.emailVerification;
+  if (!verification?.otpHash || !verification.expiresAt) {
+    throw new AppError(
+      'Verification code not found. Please request a new code.',
+      StatusCodes.BAD_REQUEST,
+    );
   }
 
-  const isOtpMatched = await bcrypt.compare(otp.toString(), existingUser.otp);
-  if (!isOtpMatched) throw new AppError('Invalid OTP', StatusCodes.BAD_REQUEST);
+  if (verification.expiresAt.getTime() < Date.now()) {
+    throw new AppError(
+      'Verification code has expired. Please request a new code.',
+      StatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const MAX_OTP_ATTEMPTS = 5;
+  if (verification.attempts >= MAX_OTP_ATTEMPTS) {
+    throw new AppError(
+      'Too many invalid attempts. Please request a new verification code.',
+      StatusCodes.TOO_MANY_REQUESTS,
+    );
+  }
+
+  const isOtpMatched = await bcrypt.compare(otp, verification.otpHash);
+  if (!isOtpMatched) {
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $inc: {
+          'emailVerification.attempts': 1,
+        },
+      },
+    );
+
+    throw new AppError('Invalid verification code.', StatusCodes.BAD_REQUEST);
+  }
 
   const result = await User.findOneAndUpdate(
-    { email },
     {
-      isVerified: true,
-      $unset: { otp: '', otpExpires: '' },
+      _id: user._id,
+      isVerified: false,
     },
-    { new: true },
-  ).select('username email role');
+    {
+      $set: {
+        isVerified: true,
+      },
+      $unset: {
+        emailVerification: '',
+      },
+    },
+    {
+      new: true,
+      projection: {
+        _id: 1,
+        firstName: 1,
+        lastName: 1,
+        email: 1,
+        role: 1,
+        status: 1,
+        isVerified: 1,
+      },
+    },
+  );
+
+  if (!result) {
+    throw new AppError('Email verification failed. Please try again.', StatusCodes.CONFLICT);
+  }
+
   return result;
 };
 
 const resendOtpCode = async (email: string) => {
-  const existingUser = await User.findOne({ email });
-  if (!existingUser)
-    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
+  const user = await User.findOne({ email }).select(
+    '_id email firstName lastName role isVerified emailVerification',
+  );
 
-  if (existingUser.isVerified === true) {
-    throw new AppError('User already verified', StatusCodes.CONFLICT);
+  if (!user) {
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
   }
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedOtp = await bcrypt.hash(otp, 10);
-  const otpExpires = new Date(Date.now() + 5 * 60 * 1000);
+  if (user.isVerified) {
+    throw new AppError('Email is already verified.', StatusCodes.CONFLICT);
+  }
 
-  const result = await User.findOneAndUpdate(
-    { email },
+  // Prevent OTP spam
+  const lastSentAt = user.emailVerification?.lastSentAt;
+
+  if (lastSentAt) {
+    const elapsedSeconds = (Date.now() - lastSentAt.getTime()) / 1000;
+
+    if (elapsedSeconds < RESEND_COOL_DOWN_SECONDS) {
+      const remainingSeconds = Math.ceil(RESEND_COOL_DOWN_SECONDS - elapsedSeconds);
+
+      throw new AppError(
+        `Please wait ${remainingSeconds} seconds before requesting a new OTP.`,
+        StatusCodes.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  const { otp, hashedOtp, otpExpires } = await generateOtp();
+
+  const result = await User.findByIdAndUpdate(
+    user._id,
     {
-      otp: hashedOtp,
-      otpExpires,
+      $set: {
+        'emailVerification.otpHash': hashedOtp,
+        'emailVerification.expiresAt': otpExpires,
+        'emailVerification.lastSentAt': new Date(),
+        'emailVerification.attempts': 0,
+      },
     },
-    { new: true },
-  ).select('username email role');
+    {
+      new: true,
+      runValidators: true,
+    },
+  ).select('_id email firstName lastName role isVerified');
+
+  if (!result) {
+    throw new AppError('Failed to generate verification OTP.', StatusCodes.INTERNAL_SERVER_ERROR);
+  }
 
   await sendEmail({
-    to: existingUser.email,
-    subject: 'Verify your email',
+    to: result.email,
+    subject: 'Verify your email — Shoppy',
     html: verificationCodeTemplate(otp),
   });
-  return result;
+
+  return {
+    email: result.email,
+    expiresAt: otpExpires,
+  };
 };
 
 const getAllUsers = async () => {
@@ -158,7 +245,7 @@ const getMyProfile = async (email: string) => {
 };
 
 const updateUserProfile = async (payload: any, email: string, file: any) => {
-  const user = await User.findOne({ email }).select('image');
+  const user = await User.findOne({ email }).select('avatar');
   if (!user)
     throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
 
@@ -168,10 +255,10 @@ const updateUserProfile = async (payload: any, email: string, file: any) => {
 
   if (file) {
     const uploadResult = await uploadToCloudinary(file.path, 'users');
-    oldImagePublicId = user.image?.public_id;
+    oldImagePublicId = user.avatar?.publicId;
 
-    updateData.image = {
-      public_id: uploadResult.public_id,
+    updateData.avatar = {
+      publicId: uploadResult.public_id,
       url: uploadResult.secure_url,
     };
   }
