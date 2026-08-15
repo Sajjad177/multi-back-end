@@ -1,0 +1,8 @@
+export const DOCUMENT_TYPE = {
+  TRADE_LICENSE: 'TRADE_LICENSE',
+  NATIONAL_ID: 'NATIONAL_ID',
+  PASSPORT: 'PASSPORT',
+  BUSINESS_REGISTRATION: 'BUSINESS_REGISTRATION',
+} as const;
+
+export type TDocumentType = (typeof DOCUMENT_TYPE)[keyof typeof DOCUMENT_TYPE];
