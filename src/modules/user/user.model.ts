@@ -3,63 +3,128 @@ import { model, Schema } from 'mongoose';
 import config from '../../config';
 import { applyEncryption } from '../../middleware/encryptionMiddleware';
 import { IUser, userModel } from './user.interface';
-import { USER_ROLE } from './user.constant';
+import { USER_ROLE, USER_STATUS } from './user.constant';
 
-const userSchema = new Schema<IUser>(
+const userSchema = new Schema<IUser, userModel>(
   {
     firstName: {
       type: String,
-      required: true,
+      required: [true, 'First name is required'],
+      trim: true,
+      minlength: [2, 'First name must be at least 2 characters'],
+      maxlength: [50, 'First name cannot exceed 50 characters'],
     },
     lastName: {
       type: String,
-      required: true,
+      required: [true, 'Last name is required'],
+      trim: true,
+      minlength: [2, 'Last name must be at least 2 characters'],
+      maxlength: [50, 'Last name cannot exceed 50 characters'],
     },
+
     email: {
       type: String,
-      required: true,
+      required: [true, 'Email is required'],
       unique: true,
+      lowercase: true,
+      trim: true,
+      index: true,
     },
+
     phone: {
       type: String,
+      trim: true,
     },
+
     password: {
       type: String,
-      required: true,
+      required: [true, 'Password is required'],
+      select: false,
     },
-    street: {
-      type: String,
-    },
-    location: {
-      type: String,
-    },
-    postalCode: {
-      type: String,
-    },
+
     dateOfBirth: {
       type: Date,
     },
+
+    avatar: {
+      publicId: {
+        type: String,
+        trim: true,
+      },
+
+      url: {
+        type: String,
+        trim: true,
+      },
+    },
+
     role: {
       type: String,
       enum: Object.values(USER_ROLE),
       default: USER_ROLE.CUSTOMER,
+      required: true,
+      index: true,
     },
-    image: {
-      public_id: {
-        type: String,
-      },
-      url: {
-        type: String,
-      },
+
+    status: {
+      type: String,
+      enum: Object.values(USER_STATUS),
+      default: USER_STATUS.ACTIVE,
+      required: true,
+      index: true,
     },
+
     isVerified: {
       type: Boolean,
       default: false,
+      required: true,
+      index: true,
     },
-    otp: { type: String, default: null },
-    otpExpires: { type: Date, default: null },
-    resetPasswordOtp: { type: String, default: null },
-    resetPasswordOtpExpires: { type: Date, default: null },
+
+    emailVerification: {
+      otpHash: {
+        type: String,
+        select: false,
+      },
+
+      expiresAt: {
+        type: Date,
+        select: false,
+      },
+
+      attempts: {
+        type: Number,
+        default: 0,
+        min: 0,
+        select: false,
+      },
+    },
+    passwordReset: {
+      otpHash: {
+        type: String,
+        select: false,
+      },
+
+      expiresAt: {
+        type: Date,
+        select: false,
+      },
+
+      attempts: {
+        type: Number,
+        default: 0,
+        min: 0,
+        select: false,
+      },
+    },
+
+    lastLoginAt: {
+      type: Date,
+    },
+
+    passwordChangedAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,
@@ -89,7 +154,5 @@ userSchema.statics.isUserExistByEmail = async function (email: string): Promise<
 userSchema.statics.isUserExistById = async function (_id: string): Promise<IUser | null> {
   return await User.findOne({ _id });
 };
-
-applyEncryption(userSchema, ['phone', 'street', 'location', 'postalCode']);
 
 export const User = model<IUser, userModel>('User', userSchema);

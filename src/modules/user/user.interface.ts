@@ -1,27 +1,36 @@
-import { Model } from 'mongoose';
-import { USER_ROLE } from './user.constant';
+import mongoose, { Model } from 'mongoose';
+import { TUserStatus, USER_ROLE } from './user.constant';
 
 export interface IUser {
-  _id: string;
+  _id: mongoose.Types.ObjectId;
+
   firstName: string;
   lastName: string;
   email: string;
-  phone: string;
+  phone?: string;
   password: string;
-  street: string;
-  location: string;
-  postalCode: string;
-  dateOfBirth: Date;
-  role: TUserRole;
-  image: {
-    public_id: string;
+  dateOfBirth?: Date;
+  avatar?: {
+    publicId: string;
     url: string;
   };
+  role: TUserRole;
+  status: TUserStatus;
   isVerified: boolean;
-  otp?: string | null;
-  otpExpires?: Date | null;
-  resetPasswordOtp?: string | null;
-  resetPasswordOtpExpires?: Date | null;
+  emailVerification?: {
+    otpHash?: string;
+    expiresAt?: Date;
+    attempts: number;
+  };
+  passwordReset?: {
+    otpHash?: string;
+    expiresAt?: Date;
+    attempts: number;
+  };
+  lastLoginAt?: Date;
+  passwordChangedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface userModel extends Model<IUser> {

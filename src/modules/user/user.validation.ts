@@ -1,19 +1,16 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 const userValidationSchema = z.object({
   body: z.object({
-    firstName: z.string({
-      required_error: "First name is required",
-    }),
-    lastName: z.string({
-      required_error: "Last name is required",
-    }),
-    email: z.string({
-      required_error: "Email is required",
-    }),
-    password: z.string({
-      required_error: "Password is required",
-    }),
+    firstName: z.string().trim().min(2).max(50),
+
+    lastName: z.string().trim().min(2).max(50),
+    email: z
+      .string()
+      .trim()
+      .email()
+      .transform((value) => value.toLowerCase()),
+    password: z.string().min(8).max(72),
   }),
 });
 

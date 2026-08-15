@@ -1,87 +1,76 @@
 import bcrypt from 'bcrypt';
 import { StatusCodes } from 'http-status-codes';
-import config from '../../config';
 import AppError from '../../errors/AppError';
 import { deleteFromCloudinary, uploadToCloudinary } from '../../utils/cloudinary';
 import sendEmail from '../../utils/sendEmail';
-import { createToken } from '../../utils/tokenGenerate';
 import verificationCodeTemplate from '../../utils/verificationCodeTemplate';
-import { USER_ROLE } from './user.constant';
+import { USER_ROLE, USER_STATUS } from './user.constant';
 import { IUser } from './user.interface';
 import { User } from './user.model';
+import { generateOtp, generateTokens, sanitizeUser } from '../../helper/helper';
 
 const registerUser = async (payload: IUser) => {
-  const existingUser = await User.isUserExistByEmail(payload.email);
-  if (existingUser && existingUser.isVerified) {
+  const email = payload.email.toLowerCase().trim();
+  const existingUser = await User.isUserExistByEmail(email);
+
+  if (existingUser?.isVerified) {
     throw new AppError('User already exists', StatusCodes.CONFLICT);
   }
 
-  // Password check
-  if (payload.password.length < 6) {
-    throw new AppError('Password must be at least 6 characters long', StatusCodes.BAD_REQUEST);
-  }
+  const { otp, hashedOtp, otpExpires } = await generateOtp();
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedOtp = await bcrypt.hash(otp, 10);
-  const otpExpires = new Date(Date.now() + 5 * 60 * 1000);
+  let user: IUser;
 
-  let result: IUser;
-
-  // Case 2: exists but not verified → update OTP
-  if (existingUser && !existingUser.isVerified) {
-    result = (await User.findOneAndUpdate(
-      { email: existingUser.email },
-      { otp: hashedOtp, otpExpires },
-      { new: true },
+  if (existingUser) {
+    user = (await User.findByIdAndUpdate(
+      existingUser._id,
+      {
+        $set: {
+          emailVerification: {
+            otpHash: hashedOtp,
+            expiresAt: otpExpires,
+            attempts: 0,
+          },
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
     )) as IUser;
   } else {
-    // Case 3: new user
-    result = await User.create({
+    user = await User.create({
       ...payload,
-      otp: hashedOtp,
-      otpExpires,
+      email,
+      role: USER_ROLE.CUSTOMER,
+      status: USER_STATUS.ACTIVE,
       isVerified: false,
+
+      emailVerification: {
+        otpHash: hashedOtp,
+        expiresAt: otpExpires,
+        attempts: 0,
+      },
     });
   }
 
-  // Send email
+  if (!user) {
+    throw new AppError('Failed to create user', StatusCodes.INTERNAL_SERVER_ERROR);
+  }
+
   await sendEmail({
-    to: result.email,
+    to: user.email,
     subject: 'Verify your email',
     html: verificationCodeTemplate(otp),
   });
 
-  // JWT payload
-  const JwtToken = {
-    userId: result._id,
-    email: result.email,
-    role: result.role,
-  };
-
-  const accessToken = createToken(
-    JwtToken,
-    config.JWT_SECRET as string,
-    config.JWT_EXPIRES_IN as string,
-  );
-
-  const refreshToken = createToken(
-    JwtToken,
-    config.refreshTokenSecret as string,
-    config.jwtRefreshTokenExpiresIn as string,
-  );
+  const token = generateTokens(user);
 
   return {
-    accessToken,
-    refreshToken,
-    user: {
-      _id: result._id,
-      firstName: result.firstName,
-      lastName: result.lastName,
-      email: result.email,
-    },
+    token,
+    user: sanitizeUser(user),
   };
 };
-
 const verifyEmail = async (email: string, payload: string) => {
   const { otp }: any = payload;
   if (!otp) throw new Error('OTP is required');
