@@ -34,10 +34,12 @@ export interface IUser {
   updatedAt: Date;
 }
 
-export interface userModel extends Model<IUser> {
+export interface IUserModel extends Model<IUser> {
   isPasswordMatch(password: string, hashedPassword: string): Promise<boolean>;
   isUserExistByEmail(email: string): Promise<IUser | null>;
+  isUserExistByEmailWithPassword(email: string): Promise<IUser | null>;
   isUserExistById(_id: string): Promise<IUser | null>;
+  isUserExistByIdWithPassword(_id: string): Promise<IUser | null>;
 }
 
 export type TUserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];

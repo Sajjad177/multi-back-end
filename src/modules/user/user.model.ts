@@ -1,10 +1,10 @@
 import bcrypt from 'bcrypt';
 import { model, Schema } from 'mongoose';
 import config from '../../config';
-import { IUser, userModel } from './user.interface';
+import { IUser, IUserModel } from './user.interface';
 import { USER_ROLE, USER_STATUS } from './user.constant';
 
-const userSchema = new Schema<IUser, userModel>(
+const userSchema = new Schema<IUser, IUserModel>(
   {
     firstName: {
       type: String,
@@ -146,16 +146,31 @@ userSchema.post('save', function (doc, next) {
   next();
 });
 
-userSchema.statics.isPasswordMatch = async function (password: string, hashedPassword: string) {
-  return await bcrypt.compare(password, hashedPassword);
+userSchema.statics.isPasswordMatch = async function (
+  password: string,
+  hashedPassword: string,
+): Promise<boolean> {
+  if (!password || !hashedPassword) {
+    return false;
+  }
+
+  return bcrypt.compare(password, hashedPassword);
 };
 
-userSchema.statics.isUserExistByEmail = async function (email: string): Promise<IUser | null> {
-  return await User.findOne({ email });
+userSchema.statics.isUserExistByEmail = async function (email: string) {
+  return await this.findOne({ email });
 };
 
-userSchema.statics.isUserExistById = async function (_id: string): Promise<IUser | null> {
-  return await User.findOne({ _id });
+userSchema.statics.isUserExistByEmailWithPassword = async function (email: string) {
+  return await this.findOne({ email }).select('+password');
 };
 
-export const User = model<IUser, userModel>('User', userSchema);
+userSchema.statics.isUserExistById = async function (_id: string) {
+  return await this.findById(_id);
+};
+
+userSchema.statics.isUserExistByIdWithPassword = async function (_id: string) {
+  return await this.findById(_id).select('+password');
+};
+
+export const User = model<IUser, IUserModel>('User', userSchema);

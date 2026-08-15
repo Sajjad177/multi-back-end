@@ -4,7 +4,6 @@ import config from '../../config';
 import AppError from '../../errors/AppError';
 import { companyName } from '../../lib/globalType';
 import sendEmail from '../../utils/sendEmail';
-import { createToken, verifyToken } from '../../utils/tokenGenerate';
 import verificationCodeTemplate from '../../utils/verificationCodeTemplate';
 import { User } from '../user/user.model';
 import { generateOtp, generateTokens, verifyRefreshToken } from '../../helper/helper';
@@ -12,9 +11,9 @@ import { generateOtp, generateTokens, verifyRefreshToken } from '../../helper/he
 const login = async (payload: { email: string; password: string }) => {
   const { email, password } = payload;
 
-  const user = await User.isUserExistByEmail(email);
+  const user = await User.isUserExistByEmailWithPassword(email);
   if (!user) {
-    throw new AppError('Invalid email or password', StatusCodes.UNAUTHORIZED);
+    throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
   }
 
   if (!user.isVerified) {
