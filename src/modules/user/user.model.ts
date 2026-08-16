@@ -1,8 +1,8 @@
 import bcrypt from 'bcrypt';
 import { model, Schema } from 'mongoose';
 import config from '../../config';
-import { IUser, IUserModel } from './user.interface';
 import { USER_ROLE, USER_STATUS } from './user.constant';
+import { IUser, IUserModel } from './user.interface';
 
 const userSchema = new Schema<IUser, IUserModel>(
   {
@@ -128,6 +128,27 @@ const userSchema = new Schema<IUser, IUserModel>(
       type: Date,
     },
     sellerOnboarding: {
+      tokenHash: {
+        type: String,
+        select: false,
+      },
+
+      expiresAt: {
+        type: Date,
+        select: false,
+      },
+      lastSentAt: {
+        type: Date,
+        select: false,
+      },
+      resendCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+        select: false,
+      },
+    },
+    deliveryPartnerOnboarding: {
       tokenHash: {
         type: String,
         select: false,

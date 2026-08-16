@@ -8,40 +8,31 @@ import AppError from '../../errors/AppError';
 import { generateSecureToken } from '../../helper/generateSecureToken';
 import QueryBuilder from '../../helper/QueryBuilder';
 import { deleteFromCloudinary, uploadToCloudinary } from '../../utils/cloudinary';
-import sellerApplicationApprovedTemplate from '../../utils/sellerApplicationApprovedTemplate';
-import sellerApplicationRejectedTemplate from '../../utils/sellerApplicationRejectedTemplate';
+import deliveryPartnerApplicationApprovedTemplate from '../../utils/deliveryPartnerApplicationApprovedTemplate';
+import deliveryPartnerApplicationRejectedTemplate from '../../utils/deliveryPartnerApplicationRejectedTemplate';
 import sendEmail from '../../utils/sendEmail';
+import { APPLICATION_STATUS } from '../applications/application.constant';
 import { USER_ROLE, USER_STATUS } from '../user/user.constant';
 import { IUser } from '../user/user.interface';
 import { User } from '../user/user.model';
-import { DOCUMENT_TYPE, JOIN_SELLER_STATUS } from './joinAsSeller.constant';
-import { IJoinAsSeller, TJoinSellerStatus } from './joinAsSeller.interface';
-import { JoinAsSeller } from './joinAsSeller.model';
+import { TJoinDeliveryPartnerStatus } from './joinAsDeliveryPartner.constant';
+import { JoinAsDeliveryPartner } from './joinAsDeliveryPartner.model';
 
 const resolveDocumentType = (file: Express.Multer.File): string => {
   const originalName = file.originalname?.toLowerCase() ?? '';
 
-  if (originalName.includes('passport')) return DOCUMENT_TYPE.PASSPORT;
-  if (
-    originalName.includes('trade') ||
-    originalName.includes('license') ||
-    originalName.includes('licence')
-  ) {
-    return DOCUMENT_TYPE.TRADE_LICENSE;
-  }
-  if (
-    originalName.includes('business') ||
-    originalName.includes('registration') ||
-    originalName.includes('company')
-  ) {
-    return DOCUMENT_TYPE.BUSINESS_REGISTRATION;
+  if (originalName.includes('license') || originalName.includes('licence'))
+    return 'DRIVING_LICENSE';
+  if (originalName.includes('national') || originalName.includes('id')) return 'NATIONAL_ID';
+  if (originalName.includes('vehicle') || originalName.includes('registration')) {
+    return 'VEHICLE_REGISTRATION';
   }
 
-  return DOCUMENT_TYPE.NATIONAL_ID;
+  return 'OTHER';
 };
 
-const joinAsSeller = async (
-  payload: IJoinAsSeller,
+const joinAsDeliveryPartner = async (
+  payload: any,
   currentUser?: JwtPayload,
   files?: Express.Multer.File[],
 ) => {
@@ -68,7 +59,7 @@ const joinAsSeller = async (
 
       if (!user.isVerified) {
         throw new AppError(
-          'Please verify your email before applying as a seller.',
+          'Please verify your email before applying as a delivery partner.',
           StatusCodes.UNAUTHORIZED,
         );
       }
@@ -77,17 +68,20 @@ const joinAsSeller = async (
         throw new AppError('Your account is not active.', StatusCodes.FORBIDDEN);
       }
 
-      if (user.role === USER_ROLE.SELLER) {
-        throw new AppError('You are already a seller.', StatusCodes.CONFLICT);
+      if (user.role === USER_ROLE.DELIVERY_PARTNER) {
+        throw new AppError('You are already a delivery partner.', StatusCodes.CONFLICT);
       }
 
-      const existingApplication = await JoinAsSeller.findOne({
+      const existingApplication = await JoinAsDeliveryPartner.findOne({
         userId: user._id,
-        status: JOIN_SELLER_STATUS.PENDING,
+        status: APPLICATION_STATUS.PENDING,
       }).session(session);
 
       if (existingApplication) {
-        throw new AppError('You already have a pending seller application.', StatusCodes.CONFLICT);
+        throw new AppError(
+          'You already have a pending delivery partner application.',
+          StatusCodes.CONFLICT,
+        );
       }
     } else {
       if (!payload.email) {
@@ -103,7 +97,7 @@ const joinAsSeller = async (
 
       if (existingUser) {
         throw new AppError(
-          'An account already exists with this email. Please login and apply as a seller.',
+          'An account already exists with this email. Please login and apply as a delivery partner.',
           StatusCodes.CONFLICT,
         );
       }
@@ -127,7 +121,7 @@ const joinAsSeller = async (
     }
 
     if (!files || files.length === 0) {
-      throw new AppError('At least one business document is required.', StatusCodes.BAD_REQUEST);
+      throw new AppError('At least one document is required.', StatusCodes.BAD_REQUEST);
     }
 
     const MAX_DOCUMENTS = 5;
@@ -138,13 +132,14 @@ const joinAsSeller = async (
         StatusCodes.BAD_REQUEST,
       );
     }
+
     uploadedDocuments = await Promise.all(
       files.map(async (file) => {
         if (!file || !file.path) {
           throw new AppError('One of the uploaded files is invalid.', StatusCodes.BAD_REQUEST);
         }
 
-        const uploadedFile = await uploadToCloudinary(file.path, 'seller_documents');
+        const uploadedFile = await uploadToCloudinary(file.path, 'delivery_partner_documents');
 
         return {
           type: resolveDocumentType(file),
@@ -154,31 +149,31 @@ const joinAsSeller = async (
       }),
     );
 
-    let businessAddress = payload.businessAddress;
-
-    if (typeof businessAddress === 'string') {
+    if (typeof payload.address === 'string') {
       try {
-        businessAddress = JSON.parse(businessAddress);
+        payload.address = JSON.parse(payload.address);
       } catch {
-        throw new AppError('Invalid business address format.', StatusCodes.BAD_REQUEST);
+        throw new AppError('Invalid address format.', StatusCodes.BAD_REQUEST);
       }
     }
 
-    const [application] = await JoinAsSeller.create(
+    const [application] = await JoinAsDeliveryPartner.create(
       [
         {
           userId: user._id,
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          businessName: payload.businessName,
-          businessType: payload.businessType,
-          ownerName: payload.ownerName,
           phone: payload.phone,
-          businessAddress,
+          address: payload.address,
+          vehicleType: payload.vehicleType,
+          vehicleNumber: payload.vehicleNumber,
+          vehicleModel: payload.vehicleModel,
+          vehicleOwnership: payload.vehicleOwnership,
+          drivingLicenseNumber: payload.drivingLicenseNumber,
           description: payload.description,
           documents: uploadedDocuments,
-          status: JOIN_SELLER_STATUS.PENDING,
+          status: APPLICATION_STATUS.PENDING,
         },
       ],
       { session },
@@ -189,7 +184,6 @@ const joinAsSeller = async (
     return {
       applicationId: application._id,
       status: application.status,
-
       user: {
         _id: user._id,
         firstName: user.firstName,
@@ -212,10 +206,10 @@ const joinAsSeller = async (
   }
 };
 
-const getAllJoinAsSellerApplications = async (query: Record<string, unknown>) => {
-  const searchableFields = ['businessName', 'ownerName', 'email'];
+const getAllJoinAsDeliveryPartnerApplications = async (query: Record<string, unknown>) => {
+  const searchableFields = ['firstName', 'lastName', 'email', 'phone', 'vehicleNumber'];
 
-  return new QueryBuilder(JoinAsSeller, query)
+  return new QueryBuilder(JoinAsDeliveryPartner, query)
     .search(searchableFields)
     .filter(['searchTerm', 'sortBy', 'sortOrder', 'page', 'limit'])
     .sort()
@@ -227,14 +221,14 @@ const getAllJoinAsSellerApplications = async (query: Record<string, unknown>) =>
     .getPaginatedResult();
 };
 
-const getJoinAsSellerApplicationById = async (id: string) => {
-  const application = await JoinAsSeller.findById(id).populate({
+const getJoinAsDeliveryPartnerApplicationById = async (id: string) => {
+  const application = await JoinAsDeliveryPartner.findById(id).populate({
     path: 'userId',
     select: 'firstName lastName email avatar',
   });
 
   if (!application) {
-    throw new AppError('Join as seller application not found.', StatusCodes.NOT_FOUND);
+    throw new AppError('Delivery partner application not found.', StatusCodes.NOT_FOUND);
   }
 
   return application;
@@ -242,9 +236,9 @@ const getJoinAsSellerApplicationById = async (id: string) => {
 
 const SELLER_SETUP_TOKEN_EXPIRES_IN = 30 * 60 * 1000;
 
-const updateJoinAsSellerApplicationStatus = async (
+const updateJoinAsDeliveryPartnerApplicationStatus = async (
   id: string,
-  status: TJoinSellerStatus,
+  status: TJoinDeliveryPartnerStatus,
   rejectionReason?: string,
 ) => {
   const session = await mongoose.startSession();
@@ -252,36 +246,34 @@ const updateJoinAsSellerApplicationStatus = async (
   try {
     session.startTransaction();
 
-    const application = await JoinAsSeller.findById(id).session(session);
+    const application = await JoinAsDeliveryPartner.findById(id).session(session);
     if (!application) {
-      throw new AppError('Seller application not found.', StatusCodes.NOT_FOUND);
+      throw new AppError('Delivery partner application not found.', StatusCodes.NOT_FOUND);
     }
 
-    if (application.status !== JOIN_SELLER_STATUS.PENDING) {
+    if (application.status !== APPLICATION_STATUS.PENDING) {
       throw new AppError(
         `Application is already ${application.status.toLowerCase()}.`,
         StatusCodes.BAD_REQUEST,
       );
     }
 
-    if (status === JOIN_SELLER_STATUS.REJECTED) {
+    if (status === APPLICATION_STATUS.REJECTED) {
       if (!rejectionReason?.trim()) {
         throw new AppError('Rejection reason is required.', StatusCodes.BAD_REQUEST);
       }
 
-      application.status = JOIN_SELLER_STATUS.REJECTED;
+      application.status = APPLICATION_STATUS.REJECTED;
       application.rejectionReason = rejectionReason.trim();
 
       await application.save({ session });
       await session.commitTransaction();
 
-      // Email should happen after transaction
       await sendEmail({
         to: application.email,
-        subject: 'Seller Application Update',
-        html: sellerApplicationRejectedTemplate({
+        subject: 'Delivery Partner Application Update',
+        html: deliveryPartnerApplicationRejectedTemplate({
           firstName: application.firstName,
-          businessName: application.businessName,
           rejectionReason: rejectionReason.trim(),
         }),
       });
@@ -289,22 +281,21 @@ const updateJoinAsSellerApplicationStatus = async (
       return application;
     }
 
-    if (status === JOIN_SELLER_STATUS.APPROVED) {
+    if (status === APPLICATION_STATUS.APPROVED) {
       const user = await User.findById(application.userId).session(session);
 
       if (!user) {
         throw new AppError('Associated user account not found.', StatusCodes.NOT_FOUND);
       }
 
-      if (user.role === USER_ROLE.SELLER) {
-        throw new AppError('User is already a seller.', StatusCodes.CONFLICT);
+      if (user.role === USER_ROLE.DELIVERY_PARTNER) {
+        throw new AppError('User is already a delivery partner.', StatusCodes.CONFLICT);
       }
 
       const { rawToken, tokenHash } = generateSecureToken();
-
       const expiresAt = new Date(Date.now() + SELLER_SETUP_TOKEN_EXPIRES_IN);
 
-      user.sellerOnboarding = {
+      user.deliveryPartnerOnboarding = {
         tokenHash,
         expiresAt,
         lastSentAt: new Date(),
@@ -313,8 +304,7 @@ const updateJoinAsSellerApplicationStatus = async (
 
       await user.save({ session });
 
-      application.status = JOIN_SELLER_STATUS.APPROVED;
-
+      application.status = APPLICATION_STATUS.APPROVED;
       await application.save({ session });
 
       await session.commitTransaction();
@@ -323,10 +313,9 @@ const updateJoinAsSellerApplicationStatus = async (
 
       await sendEmail({
         to: application.email,
-        subject: 'Your Seller Application Has Been Approved',
-        html: sellerApplicationApprovedTemplate({
+        subject: 'Your Delivery Partner Application Has Been Approved',
+        html: deliveryPartnerApplicationApprovedTemplate({
           firstName: application.firstName,
-          businessName: application.businessName,
           setupUrl,
         }),
       });
@@ -346,7 +335,7 @@ const updateJoinAsSellerApplicationStatus = async (
   }
 };
 
-const resendSellerSetupLink = async (email: string) => {
+const resendDeliveryPartnerSetupLink = async (email: string) => {
   const user = await User.findOne({
     email: email.toLowerCase().trim(),
   });
@@ -355,13 +344,13 @@ const resendSellerSetupLink = async (email: string) => {
     return;
   }
 
-  if (user.role === USER_ROLE.SELLER) {
+  if (user.role === USER_ROLE.DELIVERY_PARTNER) {
     return;
   }
 
-  const application = await JoinAsSeller.findOne({
+  const application = await JoinAsDeliveryPartner.findOne({
     userId: user._id,
-    status: JOIN_SELLER_STATUS.APPROVED,
+    status: APPLICATION_STATUS.APPROVED,
   });
 
   if (!application) {
@@ -369,8 +358,7 @@ const resendSellerSetupLink = async (email: string) => {
   }
 
   const now = Date.now();
-  const lastSentAt = user.sellerOnboarding?.lastSentAt?.getTime() ?? 0;
-
+  const lastSentAt = user.deliveryPartnerOnboarding?.lastSentAt?.getTime() ?? 0;
   const resendCooldown = 5 * 60 * 1000;
 
   if (now - lastSentAt < resendCooldown) {
@@ -380,7 +368,7 @@ const resendSellerSetupLink = async (email: string) => {
     );
   }
 
-  const resendCount = user.sellerOnboarding?.resendCount ?? 0;
+  const resendCount = user.deliveryPartnerOnboarding?.resendCount ?? 0;
 
   if (resendCount >= 5) {
     throw new AppError(
@@ -392,7 +380,7 @@ const resendSellerSetupLink = async (email: string) => {
   const { rawToken, tokenHash } = generateSecureToken();
   const expiresAt = new Date(now + 30 * 60 * 1000);
 
-  user.sellerOnboarding = {
+  user.deliveryPartnerOnboarding = {
     tokenHash,
     expiresAt,
     lastSentAt: new Date(),
@@ -400,20 +388,20 @@ const resendSellerSetupLink = async (email: string) => {
   };
 
   await user.save();
+
   const setupUrl = `${config.SELLER_SETUP_URL}?token=${encodeURIComponent(rawToken)}`;
 
   await sendEmail({
     to: user.email,
-    subject: 'Complete Your Seller Account Setup',
-    html: sellerApplicationApprovedTemplate({
+    subject: 'Complete Your Delivery Partner Account Setup',
+    html: deliveryPartnerApplicationApprovedTemplate({
       firstName: user.firstName,
-      businessName: application.businessName,
       setupUrl,
     }),
   });
 };
 
-const setupSellerPassword = async (token: string, newPassword: string) => {
+const setupDeliveryPartnerPassword = async (token: string, newPassword: string) => {
   if (!token) {
     throw new AppError('Setup token is required.', StatusCodes.BAD_REQUEST);
   }
@@ -429,34 +417,34 @@ const setupSellerPassword = async (token: string, newPassword: string) => {
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
   const user = await User.findOne({
-    'sellerOnboarding.tokenHash': tokenHash,
+    'deliveryPartnerOnboarding.tokenHash': tokenHash,
   });
 
   if (!user) {
     throw new AppError('Invalid or expired setup link.', StatusCodes.UNAUTHORIZED);
   }
 
-  const onboarding = user.sellerOnboarding;
+  const onboarding = user.deliveryPartnerOnboarding;
 
   if (!onboarding?.expiresAt || onboarding.expiresAt.getTime() < Date.now()) {
     throw new AppError('This setup link has expired. Please request a new one.', StatusCodes.GONE);
   }
 
-  const application = await JoinAsSeller.findOne({
+  const application = await JoinAsDeliveryPartner.findOne({
     userId: user._id,
-    status: JOIN_SELLER_STATUS.APPROVED,
+    status: APPLICATION_STATUS.APPROVED,
   });
 
   if (!application) {
-    throw new AppError('Approved seller application not found.', StatusCodes.NOT_FOUND);
+    throw new AppError('Approved delivery partner application not found.', StatusCodes.NOT_FOUND);
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, Number(config.bcryptSaltRounds));
 
   user.password = hashedPassword;
-  user.role = USER_ROLE.SELLER;
+  user.role = USER_ROLE.DELIVERY_PARTNER;
   user.isVerified = true;
-  user.sellerOnboarding = undefined;
+  user.deliveryPartnerOnboarding = undefined;
 
   await user.save();
 
@@ -467,13 +455,13 @@ const setupSellerPassword = async (token: string, newPassword: string) => {
   };
 };
 
-const JoinAsSellerService = {
-  joinAsSeller,
-  getAllJoinAsSellerApplications,
-  getJoinAsSellerApplicationById,
-  updateJoinAsSellerApplicationStatus,
-  resendSellerSetupLink,
-  setupSellerPassword,
+const JoinAsDeliveryPartnerService = {
+  joinAsDeliveryPartner,
+  getAllJoinAsDeliveryPartnerApplications,
+  getJoinAsDeliveryPartnerApplicationById,
+  updateJoinAsDeliveryPartnerApplicationStatus,
+  resendDeliveryPartnerSetupLink,
+  setupDeliveryPartnerPassword,
 };
 
-export default JoinAsSellerService;
+export default JoinAsDeliveryPartnerService;

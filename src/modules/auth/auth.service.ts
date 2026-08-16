@@ -2,11 +2,11 @@ import bcrypt from 'bcrypt';
 import { StatusCodes } from 'http-status-codes';
 import config from '../../config';
 import AppError from '../../errors/AppError';
+import { generateOtp, generateTokens, verifyRefreshToken } from '../../helper/helper';
 import { companyName } from '../../lib/globalType';
 import sendEmail from '../../utils/sendEmail';
 import verificationCodeTemplate from '../../utils/verificationCodeTemplate';
 import { User } from '../user/user.model';
-import { generateOtp, generateTokens, verifyRefreshToken } from '../../helper/helper';
 
 const login = async (payload: { email: string; password: string }) => {
   const { email, password } = payload;
@@ -22,6 +22,10 @@ const login = async (payload: { email: string; password: string }) => {
 
   if (user.status !== 'active') {
     throw new AppError('Your account is not active', StatusCodes.FORBIDDEN);
+  }
+
+  if (!user.password) {
+    throw new AppError('Password is not set for this account.', StatusCodes.UNAUTHORIZED);
   }
 
   const isPasswordValid = await User.isPasswordMatch(password, user.password);
@@ -175,6 +179,13 @@ const resetPassword = async (newPassword: string, userId: string) => {
     throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
   }
 
+  if (!user.password) {
+    throw new AppError(
+      'Current password is not available for this account.',
+      StatusCodes.BAD_REQUEST,
+    );
+  }
+
   // Check new password against current password
   const isSamePassword = await User.isPasswordMatch(newPassword, user.password);
   if (isSamePassword) {
@@ -220,6 +231,13 @@ const changePassword = async (
 
   if (!user) {
     throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
+  }
+
+  if (!user.password) {
+    throw new AppError(
+      'Current password is not available for this account.',
+      StatusCodes.BAD_REQUEST,
+    );
   }
 
   // Verify current password

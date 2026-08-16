@@ -36,6 +36,12 @@ export interface IUser {
     lastSentAt?: Date;
     resendCount?: number;
   };
+  deliveryPartnerOnboarding?: {
+    tokenHash?: string;
+    expiresAt?: Date;
+    lastSentAt?: Date;
+    resendCount?: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
