@@ -2,6 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import { JwtPayload } from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import AppError from '../../errors/AppError';
+import QueryBuilder from '../../helper/QueryBuilder';
 import { uploadToCloudinary } from '../../utils/cloudinary';
 import { USER_ROLE, USER_STATUS } from '../user/user.constant';
 import { IUser } from '../user/user.interface';
@@ -196,8 +197,38 @@ const joinAsSeller = async (
   }
 };
 
+const getAllJoinAsSellerApplications = async (query: Record<string, unknown>) => {
+  const searchableFields = ['businessName', 'ownerName', 'email'];
+
+  return new QueryBuilder(JoinAsSeller, query)
+    .search(searchableFields)
+    .filter(['searchTerm', 'sortBy', 'sortOrder', 'page', 'limit'])
+    .sort()
+    .paginate()
+    .populate({
+      path: 'userId',
+      select: 'firstName lastName email avatar',
+    })
+    .getPaginatedResult();
+};
+
+const getJoinAsSellerApplicationById = async (id: string) => {
+  const application = await JoinAsSeller.findById(id).populate({
+    path: 'userId',
+    select: 'firstName lastName email avatar',
+  });
+
+  if (!application) {
+    throw new AppError('Join as seller application not found.', StatusCodes.NOT_FOUND);
+  }
+
+  return application;
+};
+
 const JoinAsSellerService = {
   joinAsSeller,
+  getAllJoinAsSellerApplications,
+  getJoinAsSellerApplicationById,
 };
 
 export default JoinAsSellerService;

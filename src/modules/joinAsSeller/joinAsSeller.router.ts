@@ -8,11 +8,12 @@ const router = Router();
 router.post(
   '/',
   optionalAuthenticate,
-  //   validateRequest(joinAsSellerValidation),
-  //   auth(USER_ROLE.CUSTOMER, USER_ROLE.SELLER),
   upload.array('documents', 5),
   JoinAsSellerController.joinAsSeller,
 );
+
+router.get('/all', JoinAsSellerController.getAllJoinAsSellerApplications);
+router.get('/:id', JoinAsSellerController.getJoinAsSellerApplicationById);
 
 const joinAsSellerRouter = router;
 export default joinAsSellerRouter;
