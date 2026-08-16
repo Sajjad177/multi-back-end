@@ -127,6 +127,27 @@ const userSchema = new Schema<IUser, IUserModel>(
     passwordChangedAt: {
       type: Date,
     },
+    sellerOnboarding: {
+      tokenHash: {
+        type: String,
+        select: false,
+      },
+
+      expiresAt: {
+        type: Date,
+        select: false,
+      },
+      lastSentAt: {
+        type: Date,
+        select: false,
+      },
+      resendCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+        select: false,
+      },
+    },
   },
   {
     timestamps: true,

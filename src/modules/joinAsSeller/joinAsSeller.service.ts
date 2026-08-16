@@ -8,8 +8,15 @@ import { USER_ROLE, USER_STATUS } from '../user/user.constant';
 import { IUser } from '../user/user.interface';
 import { User } from '../user/user.model';
 import { DOCUMENT_TYPE, JOIN_SELLER_STATUS } from './joinAsSeller.constant';
-import { IJoinAsSeller } from './joinAsSeller.interface';
+import { IJoinAsSeller, TJoinSellerStatus } from './joinAsSeller.interface';
 import { JoinAsSeller } from './joinAsSeller.model';
+import sendEmail from '../../utils/sendEmail';
+import sellerApplicationApprovedTemplate from '../../utils/sellerApplicationApprovedTemplate';
+import sellerApplicationRejectedTemplate from '../../utils/sellerApplicationRejectedTemplate';
+import * as crypto from 'node:crypto';
+import config from '../../config';
+import { generateSecureToken } from '../../helper/generateSecureToken';
+import bcrypt from 'bcrypt';
 
 const resolveDocumentType = (file: Express.Multer.File): string => {
   const originalName = file.originalname?.toLowerCase() ?? '';
@@ -225,10 +232,240 @@ const getJoinAsSellerApplicationById = async (id: string) => {
   return application;
 };
 
+const SELLER_SETUP_TOKEN_EXPIRES_IN = 30 * 60 * 1000;
+
+const updateJoinAsSellerApplicationStatus = async (
+  id: string,
+  status: TJoinSellerStatus,
+  rejectionReason?: string,
+) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const application = await JoinAsSeller.findById(id).session(session);
+    if (!application) {
+      throw new AppError('Seller application not found.', StatusCodes.NOT_FOUND);
+    }
+
+    if (application.status !== JOIN_SELLER_STATUS.PENDING) {
+      throw new AppError(
+        `Application is already ${application.status.toLowerCase()}.`,
+        StatusCodes.BAD_REQUEST,
+      );
+    }
+
+    if (status === JOIN_SELLER_STATUS.REJECTED) {
+      if (!rejectionReason?.trim()) {
+        throw new AppError('Rejection reason is required.', StatusCodes.BAD_REQUEST);
+      }
+
+      application.status = JOIN_SELLER_STATUS.REJECTED;
+      application.rejectionReason = rejectionReason.trim();
+
+      await application.save({ session });
+      await session.commitTransaction();
+
+      // Email should happen after transaction
+      await sendEmail({
+        to: application.email,
+        subject: 'Seller Application Update',
+        html: sellerApplicationRejectedTemplate({
+          firstName: application.firstName,
+          businessName: application.businessName,
+          rejectionReason: rejectionReason.trim(),
+        }),
+      });
+
+      return application;
+    }
+
+    if (status === JOIN_SELLER_STATUS.APPROVED) {
+      const user = await User.findById(application.userId).session(session);
+
+      if (!user) {
+        throw new AppError('Associated user account not found.', StatusCodes.NOT_FOUND);
+      }
+
+      if (user.role === USER_ROLE.SELLER) {
+        throw new AppError('User is already a seller.', StatusCodes.CONFLICT);
+      }
+
+      const { rawToken, tokenHash } = generateSecureToken();
+
+      const expiresAt = new Date(Date.now() + SELLER_SETUP_TOKEN_EXPIRES_IN);
+
+      user.sellerOnboarding = {
+        tokenHash,
+        expiresAt,
+        lastSentAt: new Date(),
+        resendCount: 0,
+      };
+
+      await user.save({ session });
+
+      application.status = JOIN_SELLER_STATUS.APPROVED;
+
+      await application.save({ session });
+
+      await session.commitTransaction();
+
+      const setupUrl = `${config.SELLER_SETUP_URL}?token=${encodeURIComponent(rawToken)}`;
+
+      await sendEmail({
+        to: application.email,
+        subject: 'Your Seller Application Has Been Approved',
+        html: sellerApplicationApprovedTemplate({
+          firstName: application.firstName,
+          businessName: application.businessName,
+          setupUrl,
+        }),
+      });
+
+      return {
+        applicationId: application._id,
+        status: application.status,
+      };
+    }
+
+    throw new AppError('Invalid application status.', StatusCodes.BAD_REQUEST);
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
+
+const resendSellerSetupLink = async (email: string) => {
+  const user = await User.findOne({
+    email: email.toLowerCase().trim(),
+  });
+
+  if (!user) {
+    return;
+  }
+
+  if (user.role === USER_ROLE.SELLER) {
+    return;
+  }
+
+  const application = await JoinAsSeller.findOne({
+    userId: user._id,
+    status: JOIN_SELLER_STATUS.APPROVED,
+  });
+
+  if (!application) {
+    return;
+  }
+
+  const now = Date.now();
+  const lastSentAt = user.sellerOnboarding?.lastSentAt?.getTime() ?? 0;
+
+  const resendCooldown = 5 * 60 * 1000;
+
+  if (now - lastSentAt < resendCooldown) {
+    throw new AppError(
+      'Please wait before requesting another setup link.',
+      StatusCodes.TOO_MANY_REQUESTS,
+    );
+  }
+
+  const resendCount = user.sellerOnboarding?.resendCount ?? 0;
+
+  if (resendCount >= 5) {
+    throw new AppError(
+      'You have reached the maximum number of setup link requests. Please contact support.',
+      StatusCodes.TOO_MANY_REQUESTS,
+    );
+  }
+
+  const { rawToken, tokenHash } = generateSecureToken();
+  const expiresAt = new Date(now + 30 * 60 * 1000);
+
+  user.sellerOnboarding = {
+    tokenHash,
+    expiresAt,
+    lastSentAt: new Date(),
+    resendCount: resendCount + 1,
+  };
+
+  await user.save();
+  const setupUrl = `${config.SELLER_SETUP_URL}?token=${encodeURIComponent(rawToken)}`;
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Complete Your Seller Account Setup',
+    html: sellerApplicationApprovedTemplate({
+      firstName: user.firstName,
+      businessName: application.businessName,
+      setupUrl,
+    }),
+  });
+};
+
+const setupSellerPassword = async (token: string, newPassword: string) => {
+  if (!token) {
+    throw new AppError('Setup token is required.', StatusCodes.BAD_REQUEST);
+  }
+
+  if (!newPassword) {
+    throw new AppError('Password is required.', StatusCodes.BAD_REQUEST);
+  }
+
+  if (newPassword.length < 8) {
+    throw new AppError('Password must be at least 8 characters long.', StatusCodes.BAD_REQUEST);
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await User.findOne({
+    'sellerOnboarding.tokenHash': tokenHash,
+  });
+
+  if (!user) {
+    throw new AppError('Invalid or expired setup link.', StatusCodes.UNAUTHORIZED);
+  }
+
+  const onboarding = user.sellerOnboarding;
+
+  if (!onboarding?.expiresAt || onboarding.expiresAt.getTime() < Date.now()) {
+    throw new AppError('This setup link has expired. Please request a new one.', StatusCodes.GONE);
+  }
+
+  const application = await JoinAsSeller.findOne({
+    userId: user._id,
+    status: JOIN_SELLER_STATUS.APPROVED,
+  });
+
+  if (!application) {
+    throw new AppError('Approved seller application not found.', StatusCodes.NOT_FOUND);
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, Number(config.bcryptSaltRounds));
+
+  user.password = hashedPassword;
+  user.role = USER_ROLE.SELLER;
+  user.isVerified = true;
+  user.sellerOnboarding = undefined;
+
+  await user.save();
+
+  return {
+    id: user._id,
+    email: user.email,
+    role: user.role,
+  };
+};
+
 const JoinAsSellerService = {
   joinAsSeller,
   getAllJoinAsSellerApplications,
   getJoinAsSellerApplicationById,
+  updateJoinAsSellerApplicationStatus,
+  resendSellerSetupLink,
+  setupSellerPassword,
 };
 
 export default JoinAsSellerService;

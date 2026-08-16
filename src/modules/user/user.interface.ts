@@ -30,6 +30,12 @@ export interface IUser {
   };
   lastLoginAt?: Date;
   passwordChangedAt?: Date;
+  sellerOnboarding?: {
+    tokenHash?: string;
+    expiresAt?: Date;
+    lastSentAt?: Date;
+    resendCount?: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }

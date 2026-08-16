@@ -12,8 +12,12 @@ router.post(
   JoinAsSellerController.joinAsSeller,
 );
 
+router.post('/resend-setup-link', JoinAsSellerController.resendSellerSetupLink);
+
 router.get('/all', JoinAsSellerController.getAllJoinAsSellerApplications);
 router.get('/:id', JoinAsSellerController.getJoinAsSellerApplicationById);
+
+router.patch('/:id/status', JoinAsSellerController.updateJoinAsSellerApplicationStatus);
 
 const joinAsSellerRouter = router;
 export default joinAsSellerRouter;
