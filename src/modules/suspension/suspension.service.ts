@@ -1,6 +1,8 @@
 import { StatusCodes } from 'http-status-codes';
 import mongoose from 'mongoose';
+import fs from 'fs';
 import AppError from '../../errors/AppError';
+import { uploadToCloudinary, deleteFromCloudinary } from '../../utils/cloudinary';
 import { USER_ROLE, USER_STATUS } from '../user/user.constant';
 import { User } from '../user/user.model';
 import { SUSPENSION_ERROR_MESSAGES } from './suspension.constant';
@@ -123,8 +125,120 @@ const suspendUser = async (payload: ISuspendUserPayload) => {
   }
 };
 
+const submitAppeal = async (
+  suspensionId: string,
+  authUser: { sub: string; role: string; email: string },
+  appealDescription: string,
+  files?: Express.Multer.File[],
+) => {
+  // 1. Validate suspensionId format
+  if (!/^[0-9a-fA-F]{24}$/.test(suspensionId)) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.INVALID_SUSPENSION_ID, StatusCodes.BAD_REQUEST);
+  }
+
+  // 2. Find the suspension
+  const suspension = await Suspension.findById(suspensionId);
+
+  // 3. Suspension must exist
+  if (!suspension) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.SUSPENSION_NOT_FOUND, StatusCodes.NOT_FOUND);
+  }
+
+  // 4. Authenticated user must own the suspension
+  if (suspension.userId.toString() !== authUser.sub) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.FORBIDDEN_APPEAL, StatusCodes.FORBIDDEN);
+  }
+
+  // 5. Verify role consistency
+  const mappedRoleMap: Record<string, string> = {
+    customer: SuspensionUserRole.CUSTOMER,
+    seller: SuspensionUserRole.SELLER,
+    delivery_partner: SuspensionUserRole.DELIVERY_PARTNER,
+  };
+  const mappedRole = mappedRoleMap[authUser.role];
+  if (!mappedRole || mappedRole !== suspension.userRole) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.INCONSISTENT_ROLE, StatusCodes.FORBIDDEN);
+  }
+
+  // 6. Verify suspension status is ACTIVE
+  if (suspension.status !== SuspensionStatus.ACTIVE) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.SUSPENSION_NOT_ACTIVE, StatusCodes.BAD_REQUEST);
+  }
+
+  // 7. Verify current user is SUSPENDED
+  const user = await User.findById(authUser.sub);
+  if (!user) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.USER_NOT_FOUND, StatusCodes.NOT_FOUND);
+  }
+  if (user.status !== USER_STATUS.SUSPENDED) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.USER_NOT_SUSPENDED, StatusCodes.BAD_REQUEST);
+  }
+
+  // 8. Verify appealStatus is NONE
+  if (suspension.appealStatus === AppealStatus.PENDING) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.APPEAL_ALREADY_PENDING, StatusCodes.CONFLICT);
+  }
+  if (suspension.appealStatus !== AppealStatus.NONE) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.APPEAL_ALREADY_SUBMITTED, StatusCodes.CONFLICT);
+  }
+
+  // 9. Upload documents
+  const uploadedDocuments: { url: string; publicId?: string; name?: string }[] = [];
+  if (files && files.length > 0) {
+    try {
+      for (const file of files) {
+        if (!file || !file.path) {
+          throw new AppError('One of the uploaded files is invalid.', StatusCodes.BAD_REQUEST);
+        }
+        const uploadedFile = await uploadToCloudinary(file.path, 'appeal_documents');
+        uploadedDocuments.push({
+          url: uploadedFile.secure_url,
+          publicId: uploadedFile.public_id,
+          name: file.originalname,
+        });
+      }
+    } catch (error) {
+      // Clean up successfully uploaded files from Cloudinary
+      if (uploadedDocuments.length > 0) {
+        await Promise.allSettled(
+          uploadedDocuments.map((doc) => {
+            if (doc.publicId) {
+              return deleteFromCloudinary(doc.publicId);
+            }
+            return Promise.resolve();
+          }),
+        );
+      }
+      // Also delete remaining files from local disk
+      for (const file of files) {
+        if (file && file.path && fs.existsSync(file.path)) {
+          try {
+            fs.unlinkSync(file.path);
+          } catch (err) {
+            // Ignore local unlink errors
+          }
+        }
+      }
+      throw error;
+    }
+  }
+
+  // 10. Update appeal fields
+  suspension.appealStatus = AppealStatus.PENDING;
+  suspension.appealDescription = appealDescription;
+  suspension.appealedAt = new Date();
+  if (uploadedDocuments.length > 0) {
+    suspension.appealDocuments = uploadedDocuments;
+  }
+
+  await suspension.save();
+
+  return suspension;
+};
+
 const suspensionService = {
   suspendUser,
+  submitAppeal,
 };
 
 export default suspensionService;

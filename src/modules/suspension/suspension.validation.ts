@@ -66,6 +66,20 @@ const suspendUserSchema = z
     }
   });
 
+const submitAppealSchema = z.object({
+  body: z.object({
+    appealDescription: z
+      .string({
+        required_error: 'Appeal description is required',
+      })
+      .trim()
+      .min(1, 'Appeal description is required')
+      .min(10, 'Appeal description must be at least 10 characters')
+      .max(1000, 'Appeal description cannot exceed 1000 characters'),
+  }),
+});
+
 export const suspensionValidation = {
   suspendUserSchema,
+  submitAppealSchema,
 };

@@ -12,4 +12,12 @@ export const SUSPENSION_ERROR_MESSAGES = {
   INVALID_USER_ID: 'Invalid user ID format',
   INVALID_SUSPENSION_TYPE: 'Invalid suspension type',
   SUSPENSION_CREATED: 'User suspended successfully',
+  INVALID_SUSPENSION_ID: 'Invalid suspension ID format',
+  SUSPENSION_NOT_FOUND: 'Suspension record not found',
+  FORBIDDEN_APPEAL: 'You can only appeal your own suspension',
+  INCONSISTENT_ROLE: 'User role is inconsistent with suspension role',
+  SUSPENSION_NOT_ACTIVE: 'Suspension is not active',
+  USER_NOT_SUSPENDED: 'User is not currently suspended',
+  APPEAL_ALREADY_PENDING: 'An appeal is already pending for this suspension',
+  APPEAL_ALREADY_SUBMITTED: 'An appeal has already been submitted for this suspension',
 } as const;

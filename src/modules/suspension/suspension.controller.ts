@@ -15,8 +15,30 @@ const suspendUser = catchAsync(async (req, res) => {
   });
 });
 
+const submitAppeal = catchAsync(async (req, res) => {
+  const { suspensionId } = req.params;
+  const authUser = req.user as { sub: string; role: string; email: string };
+  const { appealDescription } = req.body;
+  const files = req.files as Express.Multer.File[] | undefined;
+
+  const result = await suspensionService.submitAppeal(
+    suspensionId as string,
+    authUser,
+    appealDescription,
+    files,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Appeal submitted successfully',
+    data: result,
+  });
+});
+
 const suspensionController = {
   suspendUser,
+  submitAppeal,
 };
 
 export default suspensionController;
