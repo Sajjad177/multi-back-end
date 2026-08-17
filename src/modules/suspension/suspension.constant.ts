@@ -1,0 +1,15 @@
+export const SUSPENSION_ERROR_MESSAGES = {
+  USER_NOT_FOUND: 'User not found',
+  ADMIN_CANNOT_BE_SUSPENDED: 'Admin users cannot be suspended',
+  UNSUPPORTED_ROLE: 'Only customers, sellers, and delivery partners can be suspended',
+  ALREADY_SUSPENDED: 'User is already suspended',
+  USER_BLOCKED: 'A blocked user cannot be suspended',
+  ACTIVE_SUSPENSION_EXISTS: 'User already has an active suspension',
+  REASON_REQUIRED: 'Suspension reason is required',
+  TEMPORARY_REQUIRES_EXPIRES_AT: 'Temporary suspension must have an expiration date',
+  EXPIRES_AT_IN_PAST: 'Expiration date must be in the future',
+  PERMANENT_NO_EXPIRES_AT: 'Permanent suspension should not have an expiration date',
+  INVALID_USER_ID: 'Invalid user ID format',
+  INVALID_SUSPENSION_TYPE: 'Invalid suspension type',
+  SUSPENSION_CREATED: 'User suspended successfully',
+} as const;

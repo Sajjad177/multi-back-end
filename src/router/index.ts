@@ -4,6 +4,7 @@ import contactRouter from '../modules/contact/contact.router';
 import joinAsDeliveryPartnerRouter from '../modules/joinAsDeliveryPartner/joinAsDeliveryPartner.router';
 import joinAsSellerRouter from '../modules/joinAsSeller/joinAsSeller.router';
 import userRouter from '../modules/user/user.router';
+import suspensionsRouter from '../modules/suspension/suspension.router';
 
 const router = Router();
 
@@ -27,6 +28,10 @@ const moduleRoutes = [
   {
     path: '/joinAsDeliveryPartner',
     route: joinAsDeliveryPartnerRouter,
+  },
+  {
+    path: '/suspension',
+    route: suspensionsRouter,
   },
 ];
 
