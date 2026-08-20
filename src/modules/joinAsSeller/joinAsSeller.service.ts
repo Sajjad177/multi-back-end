@@ -1,38 +1,41 @@
-import bcrypt from 'bcrypt';
-import { StatusCodes } from 'http-status-codes';
-import { JwtPayload } from 'jsonwebtoken';
-import mongoose from 'mongoose';
-import * as crypto from 'node:crypto';
-import config from '../../config';
-import AppError from '../../errors/AppError';
-import { generateSecureToken } from '../../helper/generateSecureToken';
-import QueryBuilder from '../../helper/QueryBuilder';
-import { deleteFromCloudinary, uploadToCloudinary } from '../../utils/cloudinary';
-import sellerApplicationApprovedTemplate from '../../utils/sellerApplicationApprovedTemplate';
-import sellerApplicationRejectedTemplate from '../../utils/sellerApplicationRejectedTemplate';
-import sendEmail from '../../utils/sendEmail';
-import { USER_ROLE, USER_STATUS } from '../user/user.constant';
-import { IUser } from '../user/user.interface';
-import { User } from '../user/user.model';
-import { DOCUMENT_TYPE, JOIN_SELLER_STATUS } from './joinAsSeller.constant';
-import { IJoinAsSeller, TJoinSellerStatus } from './joinAsSeller.interface';
-import { JoinAsSeller } from './joinAsSeller.model';
+import bcrypt from "bcrypt";
+import { StatusCodes } from "http-status-codes";
+import { JwtPayload } from "jsonwebtoken";
+import mongoose from "mongoose";
+import * as crypto from "node:crypto";
+import config from "../../config";
+import AppError from "../../errors/AppError";
+import { generateSecureToken } from "../../helper/generateSecureToken";
+import QueryBuilder from "../../helper/QueryBuilder";
+import {
+  deleteFromCloudinary,
+  uploadToCloudinary,
+} from "../../utils/cloudinary";
+import sellerApplicationApprovedTemplate from "../../utils/sellerApplicationApprovedTemplate";
+import sellerApplicationRejectedTemplate from "../../utils/sellerApplicationRejectedTemplate";
+import sendEmail from "../../utils/sendEmail";
+import { USER_ROLE, USER_STATUS } from "../user/user.constant";
+import { IUser } from "../user/user.interface";
+import { User } from "../user/user.model";
+import { DOCUMENT_TYPE, JOIN_SELLER_STATUS } from "./joinAsSeller.constant";
+import { IJoinAsSeller, TJoinSellerStatus } from "./joinAsSeller.interface";
+import { JoinAsSeller } from "./joinAsSeller.model";
 
 const resolveDocumentType = (file: Express.Multer.File): string => {
-  const originalName = file.originalname?.toLowerCase() ?? '';
+  const originalName = file.originalname?.toLowerCase() ?? "";
 
-  if (originalName.includes('passport')) return DOCUMENT_TYPE.PASSPORT;
+  if (originalName.includes("passport")) return DOCUMENT_TYPE.PASSPORT;
   if (
-    originalName.includes('trade') ||
-    originalName.includes('license') ||
-    originalName.includes('licence')
+    originalName.includes("trade") ||
+    originalName.includes("license") ||
+    originalName.includes("licence")
   ) {
     return DOCUMENT_TYPE.TRADE_LICENSE;
   }
   if (
-    originalName.includes('business') ||
-    originalName.includes('registration') ||
-    originalName.includes('company')
+    originalName.includes("business") ||
+    originalName.includes("registration") ||
+    originalName.includes("company")
   ) {
     return DOCUMENT_TYPE.BUSINESS_REGISTRATION;
   }
@@ -46,7 +49,11 @@ const joinAsSeller = async (
   files?: Express.Multer.File[],
 ) => {
   const session = await mongoose.startSession();
-  let uploadedDocuments: Array<{ type: string; publicId: string; url: string }> = [];
+  let uploadedDocuments: Array<{
+    type: string;
+    publicId: string;
+    url: string;
+  }> = [];
 
   try {
     session.startTransaction();
@@ -57,28 +64,34 @@ const joinAsSeller = async (
       const email = currentUser.email;
 
       if (!email) {
-        throw new AppError('User email is missing from token.', StatusCodes.UNAUTHORIZED);
+        throw new AppError(
+          "User email is missing from token.",
+          StatusCodes.UNAUTHORIZED,
+        );
       }
 
       user = await User.isUserExistByEmail(email);
 
       if (!user) {
-        throw new AppError('User account not found.', StatusCodes.NOT_FOUND);
+        throw new AppError("User account not found.", StatusCodes.NOT_FOUND);
       }
 
       if (!user.isVerified) {
         throw new AppError(
-          'Please verify your email before applying as a seller.',
+          "Please verify your email before applying as a seller.",
           StatusCodes.UNAUTHORIZED,
         );
       }
 
       if (user.status !== USER_STATUS.ACTIVE) {
-        throw new AppError('Your account is not active.', StatusCodes.FORBIDDEN);
+        throw new AppError(
+          "Your account is not active. Please contact support for more information..",
+          StatusCodes.FORBIDDEN,
+        );
       }
 
       if (user.role === USER_ROLE.SELLER) {
-        throw new AppError('You are already a seller.', StatusCodes.CONFLICT);
+        throw new AppError("You are already a seller.", StatusCodes.CONFLICT);
       }
 
       const existingApplication = await JoinAsSeller.findOne({
@@ -87,15 +100,21 @@ const joinAsSeller = async (
       }).session(session);
 
       if (existingApplication) {
-        throw new AppError('You already have a pending seller application.', StatusCodes.CONFLICT);
+        throw new AppError(
+          "You already have a pending seller application.",
+          StatusCodes.CONFLICT,
+        );
       }
     } else {
       if (!payload.email) {
-        throw new AppError('Email is required.', StatusCodes.BAD_REQUEST);
+        throw new AppError("Email is required.", StatusCodes.BAD_REQUEST);
       }
 
       if (!payload.firstName || !payload.lastName) {
-        throw new AppError('First name and last name are required.', StatusCodes.BAD_REQUEST);
+        throw new AppError(
+          "First name and last name are required.",
+          StatusCodes.BAD_REQUEST,
+        );
       }
 
       const email = payload.email.trim().toLowerCase();
@@ -103,7 +122,7 @@ const joinAsSeller = async (
 
       if (existingUser) {
         throw new AppError(
-          'An account already exists with this email. Please login and apply as a seller.',
+          "An account already exists with this email. Please login and apply as a seller.",
           StatusCodes.CONFLICT,
         );
       }
@@ -127,7 +146,10 @@ const joinAsSeller = async (
     }
 
     if (!files || files.length === 0) {
-      throw new AppError('At least one business document is required.', StatusCodes.BAD_REQUEST);
+      throw new AppError(
+        "At least one business document is required.",
+        StatusCodes.BAD_REQUEST,
+      );
     }
 
     const MAX_DOCUMENTS = 5;
@@ -141,10 +163,16 @@ const joinAsSeller = async (
     uploadedDocuments = await Promise.all(
       files.map(async (file) => {
         if (!file || !file.path) {
-          throw new AppError('One of the uploaded files is invalid.', StatusCodes.BAD_REQUEST);
+          throw new AppError(
+            "One of the uploaded files is invalid.",
+            StatusCodes.BAD_REQUEST,
+          );
         }
 
-        const uploadedFile = await uploadToCloudinary(file.path, 'seller_documents');
+        const uploadedFile = await uploadToCloudinary(
+          file.path,
+          "seller_documents",
+        );
 
         return {
           type: resolveDocumentType(file),
@@ -156,11 +184,14 @@ const joinAsSeller = async (
 
     let businessAddress = payload.businessAddress;
 
-    if (typeof businessAddress === 'string') {
+    if (typeof businessAddress === "string") {
       try {
         businessAddress = JSON.parse(businessAddress);
       } catch {
-        throw new AppError('Invalid business address format.', StatusCodes.BAD_REQUEST);
+        throw new AppError(
+          "Invalid business address format.",
+          StatusCodes.BAD_REQUEST,
+        );
       }
     }
 
@@ -202,7 +233,9 @@ const joinAsSeller = async (
 
     if (uploadedDocuments.length > 0) {
       await Promise.allSettled(
-        uploadedDocuments.map((document) => deleteFromCloudinary(document.publicId)),
+        uploadedDocuments.map((document) =>
+          deleteFromCloudinary(document.publicId),
+        ),
       );
     }
 
@@ -212,29 +245,34 @@ const joinAsSeller = async (
   }
 };
 
-const getAllJoinAsSellerApplications = async (query: Record<string, unknown>) => {
-  const searchableFields = ['businessName', 'ownerName', 'email'];
+const getAllJoinAsSellerApplications = async (
+  query: Record<string, unknown>,
+) => {
+  const searchableFields = ["businessName", "ownerName", "email"];
 
   return new QueryBuilder(JoinAsSeller, query)
     .search(searchableFields)
-    .filter(['searchTerm', 'sortBy', 'sortOrder', 'page', 'limit'])
+    .filter(["searchTerm", "sortBy", "sortOrder", "page", "limit"])
     .sort()
     .paginate()
     .populate({
-      path: 'userId',
-      select: 'firstName lastName email avatar',
+      path: "userId",
+      select: "firstName lastName email avatar",
     })
     .getPaginatedResult();
 };
 
 const getJoinAsSellerApplicationById = async (id: string) => {
   const application = await JoinAsSeller.findById(id).populate({
-    path: 'userId',
-    select: 'firstName lastName email avatar',
+    path: "userId",
+    select: "firstName lastName email avatar",
   });
 
   if (!application) {
-    throw new AppError('Join as seller application not found.', StatusCodes.NOT_FOUND);
+    throw new AppError(
+      "Join as seller application not found.",
+      StatusCodes.NOT_FOUND,
+    );
   }
 
   return application;
@@ -254,7 +292,10 @@ const updateJoinAsSellerApplicationStatus = async (
 
     const application = await JoinAsSeller.findById(id).session(session);
     if (!application) {
-      throw new AppError('Seller application not found.', StatusCodes.NOT_FOUND);
+      throw new AppError(
+        "Seller application not found.",
+        StatusCodes.NOT_FOUND,
+      );
     }
 
     if (application.status !== JOIN_SELLER_STATUS.PENDING) {
@@ -266,7 +307,10 @@ const updateJoinAsSellerApplicationStatus = async (
 
     if (status === JOIN_SELLER_STATUS.REJECTED) {
       if (!rejectionReason?.trim()) {
-        throw new AppError('Rejection reason is required.', StatusCodes.BAD_REQUEST);
+        throw new AppError(
+          "Rejection reason is required.",
+          StatusCodes.BAD_REQUEST,
+        );
       }
 
       application.status = JOIN_SELLER_STATUS.REJECTED;
@@ -278,7 +322,7 @@ const updateJoinAsSellerApplicationStatus = async (
       // Email should happen after transaction
       await sendEmail({
         to: application.email,
-        subject: 'Seller Application Update',
+        subject: "Seller Application Update",
         html: sellerApplicationRejectedTemplate({
           firstName: application.firstName,
           businessName: application.businessName,
@@ -293,11 +337,14 @@ const updateJoinAsSellerApplicationStatus = async (
       const user = await User.findById(application.userId).session(session);
 
       if (!user) {
-        throw new AppError('Associated user account not found.', StatusCodes.NOT_FOUND);
+        throw new AppError(
+          "Associated user account not found.",
+          StatusCodes.NOT_FOUND,
+        );
       }
 
       if (user.role === USER_ROLE.SELLER) {
-        throw new AppError('User is already a seller.', StatusCodes.CONFLICT);
+        throw new AppError("User is already a seller.", StatusCodes.CONFLICT);
       }
 
       const { rawToken, tokenHash } = generateSecureToken();
@@ -323,7 +370,7 @@ const updateJoinAsSellerApplicationStatus = async (
 
       await sendEmail({
         to: application.email,
-        subject: 'Your Seller Application Has Been Approved',
+        subject: "Your Seller Application Has Been Approved",
         html: sellerApplicationApprovedTemplate({
           firstName: application.firstName,
           businessName: application.businessName,
@@ -337,7 +384,7 @@ const updateJoinAsSellerApplicationStatus = async (
       };
     }
 
-    throw new AppError('Invalid application status.', StatusCodes.BAD_REQUEST);
+    throw new AppError("Invalid application status.", StatusCodes.BAD_REQUEST);
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -375,7 +422,7 @@ const resendSellerSetupLink = async (email: string) => {
 
   if (now - lastSentAt < resendCooldown) {
     throw new AppError(
-      'Please wait before requesting another setup link.',
+      "Please wait before requesting another setup link.",
       StatusCodes.TOO_MANY_REQUESTS,
     );
   }
@@ -384,7 +431,7 @@ const resendSellerSetupLink = async (email: string) => {
 
   if (resendCount >= 5) {
     throw new AppError(
-      'You have reached the maximum number of setup link requests. Please contact support.',
+      "You have reached the maximum number of setup link requests. Please contact support.",
       StatusCodes.TOO_MANY_REQUESTS,
     );
   }
@@ -404,7 +451,7 @@ const resendSellerSetupLink = async (email: string) => {
 
   await sendEmail({
     to: user.email,
-    subject: 'Complete Your Seller Account Setup',
+    subject: "Complete Your Seller Account Setup",
     html: sellerApplicationApprovedTemplate({
       firstName: user.firstName,
       businessName: application.businessName,
@@ -415,31 +462,40 @@ const resendSellerSetupLink = async (email: string) => {
 
 const setupSellerPassword = async (token: string, newPassword: string) => {
   if (!token) {
-    throw new AppError('Setup token is required.', StatusCodes.BAD_REQUEST);
+    throw new AppError("Setup token is required.", StatusCodes.BAD_REQUEST);
   }
 
   if (!newPassword) {
-    throw new AppError('Password is required.', StatusCodes.BAD_REQUEST);
+    throw new AppError("Password is required.", StatusCodes.BAD_REQUEST);
   }
 
   if (newPassword.length < 8) {
-    throw new AppError('Password must be at least 8 characters long.', StatusCodes.BAD_REQUEST);
+    throw new AppError(
+      "Password must be at least 8 characters long.",
+      StatusCodes.BAD_REQUEST,
+    );
   }
 
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const user = await User.findOne({
-    'sellerOnboarding.tokenHash': tokenHash,
+    "sellerOnboarding.tokenHash": tokenHash,
   });
 
   if (!user) {
-    throw new AppError('Invalid or expired setup link.', StatusCodes.UNAUTHORIZED);
+    throw new AppError(
+      "Invalid or expired setup link.",
+      StatusCodes.UNAUTHORIZED,
+    );
   }
 
   const onboarding = user.sellerOnboarding;
 
   if (!onboarding?.expiresAt || onboarding.expiresAt.getTime() < Date.now()) {
-    throw new AppError('This setup link has expired. Please request a new one.', StatusCodes.GONE);
+    throw new AppError(
+      "This setup link has expired. Please request a new one.",
+      StatusCodes.GONE,
+    );
   }
 
   const application = await JoinAsSeller.findOne({
@@ -448,10 +504,16 @@ const setupSellerPassword = async (token: string, newPassword: string) => {
   });
 
   if (!application) {
-    throw new AppError('Approved seller application not found.', StatusCodes.NOT_FOUND);
+    throw new AppError(
+      "Approved seller application not found.",
+      StatusCodes.NOT_FOUND,
+    );
   }
 
-  const hashedPassword = await bcrypt.hash(newPassword, Number(config.bcryptSaltRounds));
+  const hashedPassword = await bcrypt.hash(
+    newPassword,
+    Number(config.bcryptSaltRounds),
+  );
 
   user.password = hashedPassword;
   user.role = USER_ROLE.SELLER;

@@ -2,16 +2,24 @@ import bcrypt from 'bcrypt';
 import { StatusCodes } from 'http-status-codes';
 import config from '../../config';
 import AppError from '../../errors/AppError';
-import { generateOtp, generateTokens, verifyRefreshToken } from '../../helper/helper';
+import {
+  generateOtp,
+  generateSuspensionToken,
+  generateTokens,
+  verifyRefreshToken,
+} from '../../helper/helper';
 import { companyName } from '../../lib/globalType';
 import sendEmail from '../../utils/sendEmail';
 import verificationCodeTemplate from '../../utils/verificationCodeTemplate';
 import { User } from '../user/user.model';
+import { USER_STATUS } from '../user/user.constant';
+import { Suspension } from '../suspension/suspension.model';
+import { AppealStatus, SuspensionStatus } from '../suspension/suspension.interface';
 
 const login = async (payload: { email: string; password: string }) => {
   const { email, password } = payload;
-
   const user = await User.isUserExistByEmailWithPassword(email);
+
   if (!user) {
     throw new AppError('No account found with the provided credentials.', StatusCodes.NOT_FOUND);
   }
@@ -20,23 +28,97 @@ const login = async (payload: { email: string; password: string }) => {
     throw new AppError('Please verify your email before logging in', StatusCodes.UNAUTHORIZED);
   }
 
-  if (user.status !== 'active') {
-    throw new AppError('Your account is not active', StatusCodes.FORBIDDEN);
-  }
-
   if (!user.password) {
     throw new AppError('Password is not set for this account.', StatusCodes.UNAUTHORIZED);
   }
 
   const isPasswordValid = await User.isPasswordMatch(password, user.password);
+
   if (!isPasswordValid) {
     throw new AppError('Invalid email or password', StatusCodes.UNAUTHORIZED);
+  }
+
+  // ==========================================
+  // BLOCKED ACCOUNT
+  // ==========================================
+
+  if (user.status === USER_STATUS.BLOCKED) {
+    throw new AppError(
+      'Your account has been blocked. Please contact support.',
+      StatusCodes.FORBIDDEN,
+    );
+  }
+
+  // ==========================================
+  // SUSPENDED ACCOUNT
+  // ==========================================
+
+  if (user.status === USER_STATUS.SUSPENDED) {
+    const suspension = await Suspension.findOne({
+      userId: user._id,
+      status: SuspensionStatus.ACTIVE,
+    });
+
+    if (!suspension) {
+      throw new AppError(
+        'Your account is suspended, but no active suspension record was found. Please contact support.',
+        StatusCodes.FORBIDDEN,
+      );
+    }
+
+    const suspensionToken = generateSuspensionToken(user);
+
+    return {
+      accessToken: suspensionToken,
+      tokenType: 'SUSPENSION_APPEAL',
+
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+      },
+
+      accountStatus: USER_STATUS.SUSPENDED,
+
+      suspension: {
+        _id: suspension._id,
+        type: suspension.type,
+        reason: suspension.reason,
+        description: suspension.description,
+        status: suspension.status,
+        suspendedAt: suspension.suspendedAt,
+        expiresAt: suspension.expiresAt,
+        appealStatus: suspension.appealStatus,
+        appealDescription: suspension.appealDescription,
+        appealedAt: suspension.appealedAt,
+        canAppeal:
+          suspension.appealStatus === AppealStatus.NONE ||
+          suspension.appealStatus === AppealStatus.REJECTED,
+      },
+    };
+  }
+
+  // ==========================================
+  // ACTIVE ACCOUNT
+  // ==========================================
+
+  if (user.status !== USER_STATUS.ACTIVE) {
+    throw new AppError(
+      'Your account is not active. Please contact support for more information.',
+      StatusCodes.FORBIDDEN,
+    );
   }
 
   const tokens = generateTokens(user);
 
   return {
     ...tokens,
+
+    tokenType: 'ACCESS',
+
     user: {
       _id: user._id,
       firstName: user.firstName,
@@ -71,7 +153,10 @@ const refreshToken = async (token: string) => {
   }
 
   if (user.status !== 'active') {
-    throw new AppError('Your account is not active', StatusCodes.FORBIDDEN);
+    throw new AppError(
+      'Your account is not active. Please contact support for more information.. Please contact support for more information.',
+      StatusCodes.FORBIDDEN,
+    );
   }
 
   if (!user.isVerified) {

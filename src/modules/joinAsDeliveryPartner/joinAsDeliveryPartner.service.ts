@@ -1,34 +1,41 @@
-import bcrypt from 'bcrypt';
-import { StatusCodes } from 'http-status-codes';
-import { JwtPayload } from 'jsonwebtoken';
-import mongoose from 'mongoose';
-import * as crypto from 'node:crypto';
-import config from '../../config';
-import AppError from '../../errors/AppError';
-import { generateSecureToken } from '../../helper/generateSecureToken';
-import QueryBuilder from '../../helper/QueryBuilder';
-import { deleteFromCloudinary, uploadToCloudinary } from '../../utils/cloudinary';
-import deliveryPartnerApplicationApprovedTemplate from '../../utils/deliveryPartnerApplicationApprovedTemplate';
-import deliveryPartnerApplicationRejectedTemplate from '../../utils/deliveryPartnerApplicationRejectedTemplate';
-import sendEmail from '../../utils/sendEmail';
-import { APPLICATION_STATUS } from '../applications/application.constant';
-import { USER_ROLE, USER_STATUS } from '../user/user.constant';
-import { IUser } from '../user/user.interface';
-import { User } from '../user/user.model';
-import { TJoinDeliveryPartnerStatus } from './joinAsDeliveryPartner.constant';
-import { JoinAsDeliveryPartner } from './joinAsDeliveryPartner.model';
+import bcrypt from "bcrypt";
+import { StatusCodes } from "http-status-codes";
+import { JwtPayload } from "jsonwebtoken";
+import mongoose from "mongoose";
+import * as crypto from "node:crypto";
+import config from "../../config";
+import AppError from "../../errors/AppError";
+import { generateSecureToken } from "../../helper/generateSecureToken";
+import QueryBuilder from "../../helper/QueryBuilder";
+import {
+  deleteFromCloudinary,
+  uploadToCloudinary,
+} from "../../utils/cloudinary";
+import deliveryPartnerApplicationApprovedTemplate from "../../utils/deliveryPartnerApplicationApprovedTemplate";
+import deliveryPartnerApplicationRejectedTemplate from "../../utils/deliveryPartnerApplicationRejectedTemplate";
+import sendEmail from "../../utils/sendEmail";
+import { APPLICATION_STATUS } from "../applications/application.constant";
+import { USER_ROLE, USER_STATUS } from "../user/user.constant";
+import { IUser } from "../user/user.interface";
+import { User } from "../user/user.model";
+import { TJoinDeliveryPartnerStatus } from "./joinAsDeliveryPartner.constant";
+import { JoinAsDeliveryPartner } from "./joinAsDeliveryPartner.model";
 
 const resolveDocumentType = (file: Express.Multer.File): string => {
-  const originalName = file.originalname?.toLowerCase() ?? '';
+  const originalName = file.originalname?.toLowerCase() ?? "";
 
-  if (originalName.includes('license') || originalName.includes('licence'))
-    return 'DRIVING_LICENSE';
-  if (originalName.includes('national') || originalName.includes('id')) return 'NATIONAL_ID';
-  if (originalName.includes('vehicle') || originalName.includes('registration')) {
-    return 'VEHICLE_REGISTRATION';
+  if (originalName.includes("license") || originalName.includes("licence"))
+    return "DRIVING_LICENSE";
+  if (originalName.includes("national") || originalName.includes("id"))
+    return "NATIONAL_ID";
+  if (
+    originalName.includes("vehicle") ||
+    originalName.includes("registration")
+  ) {
+    return "VEHICLE_REGISTRATION";
   }
 
-  return 'OTHER';
+  return "OTHER";
 };
 
 const joinAsDeliveryPartner = async (
@@ -37,7 +44,11 @@ const joinAsDeliveryPartner = async (
   files?: Express.Multer.File[],
 ) => {
   const session = await mongoose.startSession();
-  let uploadedDocuments: Array<{ type: string; publicId: string; url: string }> = [];
+  let uploadedDocuments: Array<{
+    type: string;
+    publicId: string;
+    url: string;
+  }> = [];
 
   try {
     session.startTransaction();
@@ -48,28 +59,37 @@ const joinAsDeliveryPartner = async (
       const email = currentUser.email;
 
       if (!email) {
-        throw new AppError('User email is missing from token.', StatusCodes.UNAUTHORIZED);
+        throw new AppError(
+          "User email is missing from token.",
+          StatusCodes.UNAUTHORIZED,
+        );
       }
 
       user = await User.isUserExistByEmail(email);
 
       if (!user) {
-        throw new AppError('User account not found.', StatusCodes.NOT_FOUND);
+        throw new AppError("User account not found.", StatusCodes.NOT_FOUND);
       }
 
       if (!user.isVerified) {
         throw new AppError(
-          'Please verify your email before applying as a delivery partner.',
+          "Please verify your email before applying as a delivery partner.",
           StatusCodes.UNAUTHORIZED,
         );
       }
 
       if (user.status !== USER_STATUS.ACTIVE) {
-        throw new AppError('Your account is not active.', StatusCodes.FORBIDDEN);
+        throw new AppError(
+          "Your account is not active. Please contact support for more information..",
+          StatusCodes.FORBIDDEN,
+        );
       }
 
       if (user.role === USER_ROLE.DELIVERY_PARTNER) {
-        throw new AppError('You are already a delivery partner.', StatusCodes.CONFLICT);
+        throw new AppError(
+          "You are already a delivery partner.",
+          StatusCodes.CONFLICT,
+        );
       }
 
       const existingApplication = await JoinAsDeliveryPartner.findOne({
@@ -79,17 +99,20 @@ const joinAsDeliveryPartner = async (
 
       if (existingApplication) {
         throw new AppError(
-          'You already have a pending delivery partner application.',
+          "You already have a pending delivery partner application.",
           StatusCodes.CONFLICT,
         );
       }
     } else {
       if (!payload.email) {
-        throw new AppError('Email is required.', StatusCodes.BAD_REQUEST);
+        throw new AppError("Email is required.", StatusCodes.BAD_REQUEST);
       }
 
       if (!payload.firstName || !payload.lastName) {
-        throw new AppError('First name and last name are required.', StatusCodes.BAD_REQUEST);
+        throw new AppError(
+          "First name and last name are required.",
+          StatusCodes.BAD_REQUEST,
+        );
       }
 
       const email = payload.email.trim().toLowerCase();
@@ -97,7 +120,7 @@ const joinAsDeliveryPartner = async (
 
       if (existingUser) {
         throw new AppError(
-          'An account already exists with this email. Please login and apply as a delivery partner.',
+          "An account already exists with this email. Please login and apply as a delivery partner.",
           StatusCodes.CONFLICT,
         );
       }
@@ -121,7 +144,10 @@ const joinAsDeliveryPartner = async (
     }
 
     if (!files || files.length === 0) {
-      throw new AppError('At least one document is required.', StatusCodes.BAD_REQUEST);
+      throw new AppError(
+        "At least one document is required.",
+        StatusCodes.BAD_REQUEST,
+      );
     }
 
     const MAX_DOCUMENTS = 5;
@@ -136,10 +162,16 @@ const joinAsDeliveryPartner = async (
     uploadedDocuments = await Promise.all(
       files.map(async (file) => {
         if (!file || !file.path) {
-          throw new AppError('One of the uploaded files is invalid.', StatusCodes.BAD_REQUEST);
+          throw new AppError(
+            "One of the uploaded files is invalid.",
+            StatusCodes.BAD_REQUEST,
+          );
         }
 
-        const uploadedFile = await uploadToCloudinary(file.path, 'delivery_partner_documents');
+        const uploadedFile = await uploadToCloudinary(
+          file.path,
+          "delivery_partner_documents",
+        );
 
         return {
           type: resolveDocumentType(file),
@@ -149,11 +181,11 @@ const joinAsDeliveryPartner = async (
       }),
     );
 
-    if (typeof payload.address === 'string') {
+    if (typeof payload.address === "string") {
       try {
         payload.address = JSON.parse(payload.address);
       } catch {
-        throw new AppError('Invalid address format.', StatusCodes.BAD_REQUEST);
+        throw new AppError("Invalid address format.", StatusCodes.BAD_REQUEST);
       }
     }
 
@@ -196,7 +228,9 @@ const joinAsDeliveryPartner = async (
 
     if (uploadedDocuments.length > 0) {
       await Promise.allSettled(
-        uploadedDocuments.map((document) => deleteFromCloudinary(document.publicId)),
+        uploadedDocuments.map((document) =>
+          deleteFromCloudinary(document.publicId),
+        ),
       );
     }
 
@@ -206,29 +240,40 @@ const joinAsDeliveryPartner = async (
   }
 };
 
-const getAllJoinAsDeliveryPartnerApplications = async (query: Record<string, unknown>) => {
-  const searchableFields = ['firstName', 'lastName', 'email', 'phone', 'vehicleNumber'];
+const getAllJoinAsDeliveryPartnerApplications = async (
+  query: Record<string, unknown>,
+) => {
+  const searchableFields = [
+    "firstName",
+    "lastName",
+    "email",
+    "phone",
+    "vehicleNumber",
+  ];
 
   return new QueryBuilder(JoinAsDeliveryPartner, query)
     .search(searchableFields)
-    .filter(['searchTerm', 'sortBy', 'sortOrder', 'page', 'limit'])
+    .filter(["searchTerm", "sortBy", "sortOrder", "page", "limit"])
     .sort()
     .paginate()
     .populate({
-      path: 'userId',
-      select: 'firstName lastName email avatar',
+      path: "userId",
+      select: "firstName lastName email avatar",
     })
     .getPaginatedResult();
 };
 
 const getJoinAsDeliveryPartnerApplicationById = async (id: string) => {
   const application = await JoinAsDeliveryPartner.findById(id).populate({
-    path: 'userId',
-    select: 'firstName lastName email avatar',
+    path: "userId",
+    select: "firstName lastName email avatar",
   });
 
   if (!application) {
-    throw new AppError('Delivery partner application not found.', StatusCodes.NOT_FOUND);
+    throw new AppError(
+      "Delivery partner application not found.",
+      StatusCodes.NOT_FOUND,
+    );
   }
 
   return application;
@@ -246,9 +291,13 @@ const updateJoinAsDeliveryPartnerApplicationStatus = async (
   try {
     session.startTransaction();
 
-    const application = await JoinAsDeliveryPartner.findById(id).session(session);
+    const application =
+      await JoinAsDeliveryPartner.findById(id).session(session);
     if (!application) {
-      throw new AppError('Delivery partner application not found.', StatusCodes.NOT_FOUND);
+      throw new AppError(
+        "Delivery partner application not found.",
+        StatusCodes.NOT_FOUND,
+      );
     }
 
     if (application.status !== APPLICATION_STATUS.PENDING) {
@@ -260,7 +309,10 @@ const updateJoinAsDeliveryPartnerApplicationStatus = async (
 
     if (status === APPLICATION_STATUS.REJECTED) {
       if (!rejectionReason?.trim()) {
-        throw new AppError('Rejection reason is required.', StatusCodes.BAD_REQUEST);
+        throw new AppError(
+          "Rejection reason is required.",
+          StatusCodes.BAD_REQUEST,
+        );
       }
 
       application.status = APPLICATION_STATUS.REJECTED;
@@ -271,7 +323,7 @@ const updateJoinAsDeliveryPartnerApplicationStatus = async (
 
       await sendEmail({
         to: application.email,
-        subject: 'Delivery Partner Application Update',
+        subject: "Delivery Partner Application Update",
         html: deliveryPartnerApplicationRejectedTemplate({
           firstName: application.firstName,
           rejectionReason: rejectionReason.trim(),
@@ -285,11 +337,17 @@ const updateJoinAsDeliveryPartnerApplicationStatus = async (
       const user = await User.findById(application.userId).session(session);
 
       if (!user) {
-        throw new AppError('Associated user account not found.', StatusCodes.NOT_FOUND);
+        throw new AppError(
+          "Associated user account not found.",
+          StatusCodes.NOT_FOUND,
+        );
       }
 
       if (user.role === USER_ROLE.DELIVERY_PARTNER) {
-        throw new AppError('User is already a delivery partner.', StatusCodes.CONFLICT);
+        throw new AppError(
+          "User is already a delivery partner.",
+          StatusCodes.CONFLICT,
+        );
       }
 
       const { rawToken, tokenHash } = generateSecureToken();
@@ -313,7 +371,7 @@ const updateJoinAsDeliveryPartnerApplicationStatus = async (
 
       await sendEmail({
         to: application.email,
-        subject: 'Your Delivery Partner Application Has Been Approved',
+        subject: "Your Delivery Partner Application Has Been Approved",
         html: deliveryPartnerApplicationApprovedTemplate({
           firstName: application.firstName,
           setupUrl,
@@ -326,7 +384,7 @@ const updateJoinAsDeliveryPartnerApplicationStatus = async (
       };
     }
 
-    throw new AppError('Invalid application status.', StatusCodes.BAD_REQUEST);
+    throw new AppError("Invalid application status.", StatusCodes.BAD_REQUEST);
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -363,7 +421,7 @@ const resendDeliveryPartnerSetupLink = async (email: string) => {
 
   if (now - lastSentAt < resendCooldown) {
     throw new AppError(
-      'Please wait before requesting another setup link.',
+      "Please wait before requesting another setup link.",
       StatusCodes.TOO_MANY_REQUESTS,
     );
   }
@@ -372,7 +430,7 @@ const resendDeliveryPartnerSetupLink = async (email: string) => {
 
   if (resendCount >= 5) {
     throw new AppError(
-      'You have reached the maximum number of setup link requests. Please contact support.',
+      "You have reached the maximum number of setup link requests. Please contact support.",
       StatusCodes.TOO_MANY_REQUESTS,
     );
   }
@@ -393,7 +451,7 @@ const resendDeliveryPartnerSetupLink = async (email: string) => {
 
   await sendEmail({
     to: user.email,
-    subject: 'Complete Your Delivery Partner Account Setup',
+    subject: "Complete Your Delivery Partner Account Setup",
     html: deliveryPartnerApplicationApprovedTemplate({
       firstName: user.firstName,
       setupUrl,
@@ -401,33 +459,45 @@ const resendDeliveryPartnerSetupLink = async (email: string) => {
   });
 };
 
-const setupDeliveryPartnerPassword = async (token: string, newPassword: string) => {
+const setupDeliveryPartnerPassword = async (
+  token: string,
+  newPassword: string,
+) => {
   if (!token) {
-    throw new AppError('Setup token is required.', StatusCodes.BAD_REQUEST);
+    throw new AppError("Setup token is required.", StatusCodes.BAD_REQUEST);
   }
 
   if (!newPassword) {
-    throw new AppError('Password is required.', StatusCodes.BAD_REQUEST);
+    throw new AppError("Password is required.", StatusCodes.BAD_REQUEST);
   }
 
   if (newPassword.length < 8) {
-    throw new AppError('Password must be at least 8 characters long.', StatusCodes.BAD_REQUEST);
+    throw new AppError(
+      "Password must be at least 8 characters long.",
+      StatusCodes.BAD_REQUEST,
+    );
   }
 
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const user = await User.findOne({
-    'deliveryPartnerOnboarding.tokenHash': tokenHash,
+    "deliveryPartnerOnboarding.tokenHash": tokenHash,
   });
 
   if (!user) {
-    throw new AppError('Invalid or expired setup link.', StatusCodes.UNAUTHORIZED);
+    throw new AppError(
+      "Invalid or expired setup link.",
+      StatusCodes.UNAUTHORIZED,
+    );
   }
 
   const onboarding = user.deliveryPartnerOnboarding;
 
   if (!onboarding?.expiresAt || onboarding.expiresAt.getTime() < Date.now()) {
-    throw new AppError('This setup link has expired. Please request a new one.', StatusCodes.GONE);
+    throw new AppError(
+      "This setup link has expired. Please request a new one.",
+      StatusCodes.GONE,
+    );
   }
 
   const application = await JoinAsDeliveryPartner.findOne({
@@ -436,10 +506,16 @@ const setupDeliveryPartnerPassword = async (token: string, newPassword: string) 
   });
 
   if (!application) {
-    throw new AppError('Approved delivery partner application not found.', StatusCodes.NOT_FOUND);
+    throw new AppError(
+      "Approved delivery partner application not found.",
+      StatusCodes.NOT_FOUND,
+    );
   }
 
-  const hashedPassword = await bcrypt.hash(newPassword, Number(config.bcryptSaltRounds));
+  const hashedPassword = await bcrypt.hash(
+    newPassword,
+    Number(config.bcryptSaltRounds),
+  );
 
   user.password = hashedPassword;
   user.role = USER_ROLE.DELIVERY_PARTNER;

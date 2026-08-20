@@ -36,9 +36,28 @@ const submitAppeal = catchAsync(async (req, res) => {
   });
 });
 
+const toggleAppealStatus = catchAsync(async (req, res) => {
+  const { suspensionId } = req.params;
+  const { status, reviewNote } = req.body;
+
+  const result = await suspensionService.toggleAppealStatus(
+    suspensionId as string,
+    status,
+    reviewNote,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Appeal status updated successfully',
+    data: result,
+  });
+});
+
 const suspensionController = {
   suspendUser,
   submitAppeal,
+  toggleAppealStatus,
 };
 
 export default suspensionController;

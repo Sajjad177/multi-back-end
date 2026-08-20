@@ -4,6 +4,7 @@ import config from '../config';
 import AppError from '../errors/AppError';
 import { verifyToken } from '../utils/tokenGenerate';
 import { TUserRole } from '../modules/user/user.interface';
+import catchAsync from '../utils/catchAsync';
 
 const extractToken = (req: Request): string | null => {
   const authorization = req.headers.authorization;
@@ -21,18 +22,16 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
   }
 
   const token = authorization.split(' ')[1];
-
   if (!token) {
     return next(new AppError('Authentication required', StatusCodes.UNAUTHORIZED));
   }
 
   try {
     const decoded = verifyToken(token, config.JWT_SECRET as string);
-
     req.user = decoded;
 
     next();
-  } catch {
+  } catch (error) {
     next(new AppError('Invalid or expired token', StatusCodes.UNAUTHORIZED));
   }
 };
@@ -68,3 +67,14 @@ export const optionalAuthenticate = async (req: Request, _res: Response, next: N
     next();
   }
 };
+
+export const requireSuspensionAccess = catchAsync(async (req, res, next) => {
+  if (req.user?.purpose !== 'SUSPENSION_APPEAL') {
+    throw new AppError(
+      'This endpoint is only available for suspended account appeal.',
+      StatusCodes.FORBIDDEN,
+    );
+  }
+
+  next();
+});

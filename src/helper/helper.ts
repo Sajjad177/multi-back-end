@@ -1,9 +1,10 @@
 import bcrypt from 'bcrypt';
 import { Response } from 'express';
+import { JwtPayload, sign } from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import config from '../config';
 import { IUser } from '../modules/user/user.interface';
 import { createToken, verifyToken } from '../utils/tokenGenerate';
-import { JwtPayload } from 'jsonwebtoken';
 
 export const generateTokens = (user: any) => {
   const tokenPayload = {
@@ -74,4 +75,22 @@ export const setRefreshTokenCookie = (res: Response, refreshToken: string) => {
 
 export const clearRefreshTokenCookie = (res: Response) => {
   res.clearCookie('refreshToken', refreshTokenCookieOptions);
+};
+
+interface ISuspensionTokenPayload {
+  sub: mongoose.Types.ObjectId;
+  role: string;
+  purpose: 'SUSPENSION_APPEAL';
+}
+
+export const generateSuspensionToken = (user: { _id: mongoose.Types.ObjectId; role: string }) => {
+  const payload: ISuspensionTokenPayload = {
+    sub: user._id,
+    role: user.role,
+    purpose: 'SUSPENSION_APPEAL',
+  };
+
+  return sign(payload, config.JWT_SECRET as string, {
+    expiresIn: '15m',
+  });
 };

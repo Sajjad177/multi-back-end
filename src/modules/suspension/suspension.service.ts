@@ -13,6 +13,8 @@ import {
   SuspensionUserRole,
 } from './suspension.interface';
 import { Suspension } from './suspension.model';
+import sendEmail from '../../utils/sendEmail';
+import suspensionTemplate from '../../utils/suspensionTamplate';
 
 interface ISuspendUserPayload {
   userId: string;
@@ -236,9 +238,150 @@ const submitAppeal = async (
   return suspension;
 };
 
+const toggleAppealStatus = async (
+  suspensionId: string,
+  status: AppealStatus.APPROVED | AppealStatus.REJECTED,
+  reviewNote: string,
+) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // -----------------------------------------
+    // 1. Validate suspension ID
+    // -----------------------------------------
+
+    if (!mongoose.Types.ObjectId.isValid(suspensionId)) {
+      throw new AppError(SUSPENSION_ERROR_MESSAGES.INVALID_SUSPENSION_ID, StatusCodes.BAD_REQUEST);
+    }
+
+    // -----------------------------------------
+    // 2. Validate decision
+    // -----------------------------------------
+
+    if (status !== AppealStatus.APPROVED && status !== AppealStatus.REJECTED) {
+      throw new AppError(
+        'Invalid appeal status. Only APPROVED or REJECTED is allowed.',
+        StatusCodes.BAD_REQUEST,
+      );
+    }
+
+    // -----------------------------------------
+    // 3. Find suspension
+    // -----------------------------------------
+
+    const suspension = await Suspension.findById(suspensionId).session(session);
+    if (!suspension) {
+      throw new AppError(SUSPENSION_ERROR_MESSAGES.SUSPENSION_NOT_FOUND, StatusCodes.NOT_FOUND);
+    }
+
+    // -----------------------------------------
+    // 4. Appeal must be PENDING
+    // -----------------------------------------
+
+    if (suspension.appealStatus !== AppealStatus.PENDING) {
+      throw new AppError('Only pending appeals can be approved or rejected.', StatusCodes.CONFLICT);
+    }
+
+    // -----------------------------------------
+    // 5. Suspension must still be ACTIVE
+    // -----------------------------------------
+
+    if (suspension.status !== SuspensionStatus.ACTIVE) {
+      throw new AppError(SUSPENSION_ERROR_MESSAGES.SUSPENSION_NOT_ACTIVE, StatusCodes.CONFLICT);
+    }
+
+    // -----------------------------------------
+    // 6. Find user
+    // -----------------------------------------
+
+    const user = await User.findById(suspension.userId).session(session);
+    if (!user) {
+      throw new AppError(SUSPENSION_ERROR_MESSAGES.USER_NOT_FOUND, StatusCodes.NOT_FOUND);
+    }
+
+    // -----------------------------------------
+    // 7. Update based on admin decision
+    // -----------------------------------------
+
+    if (status === AppealStatus.APPROVED) {
+      // User gets account back
+      user.status = USER_STATUS.ACTIVE;
+
+      suspension.appealStatus = AppealStatus.APPROVED;
+
+      // Suspension itself is lifted
+      suspension.status = SuspensionStatus.LIFTED;
+
+      suspension.liftedAt = new Date();
+    }
+
+    if (status === AppealStatus.REJECTED) {
+      // User remains suspended
+      user.status = USER_STATUS.SUSPENDED;
+
+      suspension.appealStatus = AppealStatus.REJECTED;
+
+      // IMPORTANT:
+      // Suspension remains ACTIVE
+      suspension.status = SuspensionStatus.ACTIVE;
+    }
+
+    // -----------------------------------------
+    // 8. Save review information
+    // -----------------------------------------
+
+    suspension.appealReviewNote = reviewNote;
+    suspension.appealReviewedAt = new Date();
+
+    await user.save({ session });
+    await suspension.save({ session });
+
+    // -----------------------------------------
+    // 9. Commit transaction
+    // -----------------------------------------
+
+    await session.commitTransaction();
+
+    // -----------------------------------------
+    // 10. Send email AFTER transaction commit
+    // -----------------------------------------
+
+    const email = suspensionTemplate({
+      userName: `${user.firstName} ${user.lastName}`,
+      status,
+      reviewNote,
+    });
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: email.subject,
+        html: email.html,
+      });
+    } catch (emailError) {
+      // Email failure must NOT rollback the successful
+      // suspension decision.
+      console.error('Suspension appeal review email failed:', emailError);
+    }
+
+    // -----------------------------------------
+    // 11. Return updated suspension
+    // -----------------------------------------
+
+    return suspension;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
+};
 const suspensionService = {
   suspendUser,
   submitAppeal,
+  toggleAppealStatus,
 };
 
 export default suspensionService;
