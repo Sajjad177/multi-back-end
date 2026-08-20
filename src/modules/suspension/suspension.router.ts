@@ -32,5 +32,14 @@ router.patch(
   suspensionController.toggleAppealStatus,
 );
 
+router.get('/all', authenticate, auth(USER_ROLE.ADMIN), suspensionController.getAllSuspensions);
+
+router.get(
+  '/:suspensionId',
+  authenticate,
+  auth(USER_ROLE.ADMIN),
+  suspensionController.getSuspensionById,
+);
+
 const suspensionsRouter = router;
 export default suspensionsRouter;

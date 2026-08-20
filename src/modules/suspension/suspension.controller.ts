@@ -54,10 +54,36 @@ const toggleAppealStatus = catchAsync(async (req, res) => {
   });
 });
 
+const getAllSuspensions = catchAsync(async (req, res) => {
+  const result = await suspensionService.getAllSuspensions(req.query);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Suspensions retrieved successfully',
+    data: result,
+  });
+});
+
+const getSuspensionById = catchAsync(async (req, res) => {
+  const { suspensionId } = req.params;
+
+  const result = await suspensionService.getSuspensionById(suspensionId as string);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Suspension retrieved successfully',
+    data: result,
+  });
+});
+
 const suspensionController = {
   suspendUser,
   submitAppeal,
   toggleAppealStatus,
+  getAllSuspensions,
+  getSuspensionById,
 };
 
 export default suspensionController;

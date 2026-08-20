@@ -15,6 +15,7 @@ import {
 import { Suspension } from './suspension.model';
 import sendEmail from '../../utils/sendEmail';
 import suspensionTemplate from '../../utils/suspensionTamplate';
+import QueryBuilder from '../../helper/QueryBuilder';
 
 interface ISuspendUserPayload {
   userId: string;
@@ -378,10 +379,41 @@ const toggleAppealStatus = async (
     await session.endSession();
   }
 };
+
+const getAllSuspensions = async (query: Record<string, unknown>) => {
+  const searchableFields = ['firstName', 'lastName', 'ownerName', 'email'];
+
+  return new QueryBuilder(Suspension, query)
+    .search(searchableFields)
+    .filter(['searchTerm', 'sortBy', 'sortOrder', 'page', 'limit'])
+    .sort()
+    .paginate()
+    .populate({
+      path: 'userId',
+      select: 'firstName lastName email avatar',
+    })
+    .getPaginatedResult();
+};
+
+const getSuspensionById = async (suspensionId: string) => {
+  const suspension = await Suspension.findById(suspensionId).populate(
+    'userId',
+    'firstName lastName email role status',
+  );
+
+  if (!suspension) {
+    throw new AppError(SUSPENSION_ERROR_MESSAGES.SUSPENSION_NOT_FOUND, StatusCodes.NOT_FOUND);
+  }
+
+  return suspension;
+};
+
 const suspensionService = {
   suspendUser,
   submitAppeal,
   toggleAppealStatus,
+  getAllSuspensions,
+  getSuspensionById,
 };
 
 export default suspensionService;
