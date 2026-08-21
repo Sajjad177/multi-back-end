@@ -14,3 +14,9 @@ export interface ICategory {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+export interface IUpdateCategory {
+  name?: string;
+  parentId?: Types.ObjectId | null;
+  description?: string;
+}
