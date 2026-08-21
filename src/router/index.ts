@@ -6,6 +6,7 @@ import joinAsSellerRouter from '../modules/joinAsSeller/joinAsSeller.router';
 import userRouter from '../modules/user/user.router';
 import suspensionsRouter from '../modules/suspension/suspension.router';
 import categoryRouter from '../modules/category/category.router';
+import categorySuggestionRouter from '../modules/categorySuggestion/categorySuggestion.router';
 
 const router = Router();
 
@@ -37,6 +38,10 @@ const moduleRoutes = [
   {
     path: '/category',
     route: categoryRouter,
+  },
+  {
+    path: '/suggestion',
+    route: categorySuggestionRouter,
   },
 ];
 
