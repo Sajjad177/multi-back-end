@@ -10,7 +10,6 @@ export const getUserWithValidation = async (userId: string): Promise<IUser> => {
   }
 
   const user = await User.isUserExistById(userId);
-
   if (!user) {
     throw new AppError('User not found', StatusCodes.NOT_FOUND);
   }

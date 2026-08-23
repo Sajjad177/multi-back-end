@@ -8,7 +8,6 @@ const productImageSchema = new Schema<IProductImage>(
       required: true,
       trim: true,
     },
-
     url: {
       type: String,
       required: true,
@@ -25,7 +24,6 @@ const productSchema = new Schema<IProduct>(
       required: true,
       trim: true,
     },
-
     slug: {
       type: String,
       required: true,
@@ -33,30 +31,25 @@ const productSchema = new Schema<IProduct>(
       trim: true,
       lowercase: true,
     },
-
     categoryId: {
       type: Schema.Types.ObjectId,
       ref: 'Category',
       required: true,
     },
-
     description: {
       type: String,
       trim: true,
     },
-
     images: {
       type: [productImageSchema],
       required: true,
       default: [],
     },
-
     unit: {
       type: String,
       enum: Object.values(PRODUCT_UNIT),
       required: true,
     },
-
     status: {
       type: String,
       enum: Object.values(PRODUCT_STATUS),
