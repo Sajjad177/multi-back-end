@@ -15,5 +15,7 @@ router.post(
   productController.addNewProduct,
 );
 
+router.get('/all', productController.getAllProducts);
+
 const productRouter = router;
 export default productRouter;

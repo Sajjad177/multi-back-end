@@ -6,6 +6,7 @@ import Category from '../category/category.model';
 import slugify from 'slugify';
 import { Product } from './product.model';
 import { uploadToCloudinary } from '../../utils/cloudinary';
+import QueryBuilder from '../../helper/QueryBuilder';
 
 const addNewProduct = async (payload: IProduct, files: Express.Multer.File[], sellerId: string) => {
   const { name, categoryId, description, unit } = payload;
@@ -76,8 +77,25 @@ const addNewProduct = async (payload: IProduct, files: Express.Multer.File[], se
 
   return product;
 };
+
+const getAllProducts = (query: Record<string, unknown>) => {
+  const searchableFields = ['name'];
+
+  return new QueryBuilder(Product, query)
+    .search(searchableFields)
+    .filter(['searchTerm', 'sortBy', 'sortOrder', 'page', 'limit'])
+    .sort()
+    .paginate()
+    .populate({
+      path: 'categoryId',
+      select: 'name slug parentId',
+    })
+    .getPaginatedResult();
+};
+
 const productService = {
   addNewProduct,
+  getAllProducts,
 };
 
 export default productService;

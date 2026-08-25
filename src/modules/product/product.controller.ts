@@ -16,8 +16,22 @@ const addNewProduct = catchAsync(async (req, res) => {
     data: result,
   });
 });
+
+const getAllProducts = catchAsync(async (req, res) => {
+  const result = await productService.getAllProducts(req.query);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Product is get successfully',
+    data: result.data,
+    meta: result.meta,
+  });
+});
+
 const productController = {
   addNewProduct,
+  getAllProducts,
 };
 
 export default productController;
