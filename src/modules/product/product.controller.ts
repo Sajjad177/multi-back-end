@@ -29,9 +29,12 @@ const getAllProducts = catchAsync(async (req, res) => {
   });
 });
 
+const getSingeProduct = catchAsync(async (req, res) => {});
+
 const productController = {
   addNewProduct,
   getAllProducts,
+  getSingeProduct,
 };
 
 export default productController;
