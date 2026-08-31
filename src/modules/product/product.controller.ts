@@ -29,12 +29,43 @@ const getAllProducts = catchAsync(async (req, res) => {
   });
 });
 
-const getSingeProduct = catchAsync(async (req, res) => {});
+const getSingeProduct = catchAsync(async (req, res) => {
+  const { productId } = req.params;
+  const result = await productService.getSingleProduct(productId as string);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Product is get successfully',
+    data: result,
+  });
+});
+
+const updateProduct = catchAsync(async (req, res) => {
+  const { productId } = req.params;
+  const files = req.files as Express.Multer.File[];
+
+  const sellerId = req.user.sub;
+  const result = await productService.updateProduct(
+    productId as string,
+    req.body,
+    files,
+    sellerId as string,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success: true,
+    message: 'Product is updated successfully',
+    data: result,
+  });
+});
 
 const productController = {
   addNewProduct,
   getAllProducts,
   getSingeProduct,
+  updateProduct,
 };
 
 export default productController;

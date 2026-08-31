@@ -16,6 +16,15 @@ router.post(
 );
 
 router.get('/all', productController.getAllProducts);
+router.get('/:productId', productController.getSingeProduct);
+
+router.patch(
+  '/:productId',
+  authenticate,
+  auth(USER_ROLE.SELLER),
+  upload.array('images', 5),
+  productController.updateProduct,
+);
 
 const productRouter = router;
 export default productRouter;
