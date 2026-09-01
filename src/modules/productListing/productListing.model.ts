@@ -6,13 +6,13 @@ const quantityOptionSchema = new Schema(
     quantity: {
       type: Number,
       required: true,
-      min: 1,
+      min: 0.01,
     },
 
     price: {
       type: Number,
       required: true,
-      min: 0,
+      min: 0.01,
     },
   },
   {
@@ -57,7 +57,7 @@ const productListingSchema = new Schema<IProductListing>(
 
     sellerId: {
       type: Schema.Types.ObjectId,
-      ref: 'Seller',
+      ref: 'User',
       required: true,
     },
 
@@ -92,12 +92,12 @@ const productListingSchema = new Schema<IProductListing>(
 
     minOrderQuantity: {
       type: Number,
-      min: 1,
+      min: 0.01,
     },
 
     maxOrderQuantity: {
       type: Number,
-      min: 1,
+      min: 0.01,
     },
 
     status: {
