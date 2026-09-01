@@ -124,11 +124,10 @@ const updateProduct = async (
   }
 
   // 4. Check ownership
-  const productSellerId = (product as any)?.sellerId;
-
-  if (productSellerId?.toString() !== sellerId) {
-    throw new AppError('You are not allowed to update this product', StatusCodes.FORBIDDEN);
-  }
+  // const productSellerId = (product as any)?.sellerId;
+  // if (productSellerId?.toString() !== sellerId) {
+  //   throw new AppError('You are not allowed to update this product', StatusCodes.FORBIDDEN);
+  // }
 
   // 5. Validate category if seller wants to change it
   if (payload.categoryId) {
