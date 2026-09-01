@@ -8,6 +8,7 @@ import suspensionsRouter from '../modules/suspension/suspension.router';
 import categoryRouter from '../modules/category/category.router';
 import categorySuggestionRouter from '../modules/categorySuggestion/categorySuggestion.router';
 import productRouter from '../modules/product/product.router';
+import productListingRouter from '../modules/productListing/productListing.router';
 
 const router = Router();
 
@@ -47,6 +48,10 @@ const moduleRoutes = [
   {
     path: '/product',
     route: productRouter,
+  },
+  {
+    path: '/productListing',
+    route: productListingRouter,
   },
 ];
 
