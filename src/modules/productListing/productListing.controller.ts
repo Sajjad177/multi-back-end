@@ -39,7 +39,23 @@ const getSingleProductListing = catchAsync(async (req, res) => {
   });
 });
 
-const updateProductListing = catchAsync(async (req, res) => {});
+const updateProductListing = catchAsync(async (req, res) => {
+  const { productListingId } = req.params;
+  const sellerId = req.user.sub;
+
+  const result = await productListingService.updateProductListing(
+    productListingId as string,
+    req.body,
+    sellerId as string,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Product listing updated successfully',
+    data: result,
+  });
+});
 
 const deleteProductListing = catchAsync(async (req, res) => {});
 

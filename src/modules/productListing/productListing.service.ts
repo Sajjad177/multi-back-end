@@ -175,8 +175,149 @@ const getSingleProductListing = async (productListingId: string) => {
   return listing;
 };
 
-const updateProductListing = async (productListingId: string, updateData: any) => {
-  // Implement the logic to update a product listing by its ID
+const updateProductListing = async (
+  productListingId: string,
+  updateData: Partial<IProductListing>,
+  sellerId: string,
+) => {
+  // 1. Validate seller
+  await assertActiveSeller(sellerId);
+
+  // 2. Find listing
+  const listing = await ProductListing.findById(productListingId);
+
+  if (!listing) {
+    throw new AppError('Product listing not found', StatusCodes.NOT_FOUND);
+  }
+
+  // 3. Ownership check
+  if (listing.sellerId.toString() !== sellerId) {
+    throw new AppError('You are not the owner of this product listing', StatusCodes.FORBIDDEN);
+  }
+
+  // 4. Don't allow seller to modify protected fields
+  const allowedUpdates: Partial<IProductListing> = {};
+
+  if (updateData.basePrice !== undefined) {
+    allowedUpdates.basePrice = updateData.basePrice;
+  }
+
+  if (updateData.quantityOptions !== undefined) {
+    allowedUpdates.quantityOptions = updateData.quantityOptions;
+  }
+
+  if (updateData.discount !== undefined) {
+    allowedUpdates.discount = updateData.discount;
+  }
+
+  if (updateData.stock !== undefined) {
+    allowedUpdates.stock = updateData.stock;
+  }
+
+  if (updateData.allowCustomQuantity !== undefined) {
+    allowedUpdates.allowCustomQuantity = updateData.allowCustomQuantity;
+  }
+
+  if (updateData.minOrderQuantity !== undefined) {
+    allowedUpdates.minOrderQuantity = updateData.minOrderQuantity;
+  }
+
+  if (updateData.maxOrderQuantity !== undefined) {
+    allowedUpdates.maxOrderQuantity = updateData.maxOrderQuantity;
+  }
+
+  // 5. Validate base price
+  if (allowedUpdates.basePrice !== undefined && allowedUpdates.basePrice <= 0) {
+    throw new AppError('Base price must be greater than 0', StatusCodes.BAD_REQUEST);
+  }
+
+  // 6. Validate stock
+  if (allowedUpdates.stock !== undefined && allowedUpdates.stock < 0) {
+    throw new AppError('Stock cannot be negative', StatusCodes.BAD_REQUEST);
+  }
+
+  // 7. Validate quantity options
+  if (allowedUpdates.quantityOptions) {
+    if (allowedUpdates.quantityOptions.length === 0) {
+      throw new AppError('At least one quantity option is required', StatusCodes.BAD_REQUEST);
+    }
+
+    const quantities = allowedUpdates.quantityOptions.map((option) => option.quantity);
+    const uniqueQuantities = new Set(quantities);
+
+    if (uniqueQuantities.size !== quantities.length) {
+      throw new AppError('Duplicate quantity options are not allowed', StatusCodes.BAD_REQUEST);
+    }
+
+    for (const option of allowedUpdates.quantityOptions) {
+      if (option.quantity <= 0) {
+        throw new AppError('Quantity must be greater than 0', StatusCodes.BAD_REQUEST);
+      }
+
+      if (option.price <= 0) {
+        throw new AppError('Quantity option price must be greater than 0', StatusCodes.BAD_REQUEST);
+      }
+    }
+  }
+
+  // 8. Validate discount
+  if (allowedUpdates.discount) {
+    const { type, value, startsAt, endsAt } = allowedUpdates.discount;
+
+    if (value <= 0) {
+      throw new AppError('Discount value must be greater than 0', StatusCodes.BAD_REQUEST);
+    }
+
+    if (type === DISCOUNT_TYPE.PERCENTAGE && value > 100) {
+      throw new AppError('Percentage discount cannot exceed 100%', StatusCodes.BAD_REQUEST);
+    }
+
+    if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) {
+      throw new AppError('Discount end date must be after start date', StatusCodes.BAD_REQUEST);
+    }
+  }
+
+  // 9. Validate custom quantity
+  const allowCustomQuantity = allowedUpdates.allowCustomQuantity ?? listing.allowCustomQuantity;
+  const minOrderQuantity = allowedUpdates.minOrderQuantity ?? listing.minOrderQuantity;
+  const maxOrderQuantity = allowedUpdates.maxOrderQuantity ?? listing.maxOrderQuantity;
+
+  if (allowCustomQuantity) {
+    if (minOrderQuantity === undefined || minOrderQuantity <= 0) {
+      throw new AppError(
+        'Minimum order quantity is required when custom quantity is enabled',
+        StatusCodes.BAD_REQUEST,
+      );
+    }
+
+    if (maxOrderQuantity === undefined || maxOrderQuantity <= 0) {
+      throw new AppError(
+        'Maximum order quantity is required when custom quantity is enabled',
+        StatusCodes.BAD_REQUEST,
+      );
+    }
+
+    if (minOrderQuantity > maxOrderQuantity) {
+      throw new AppError(
+        'Minimum order quantity cannot be greater than maximum order quantity',
+        StatusCodes.BAD_REQUEST,
+      );
+    }
+  }
+
+  // 10. Update listing
+  const updatedListing = await ProductListing.findByIdAndUpdate(
+    productListingId,
+    {
+      $set: allowedUpdates,
+    },
+    {
+      new: true,
+      runValidators: true,
+    },
+  );
+
+  return updatedListing;
 };
 
 const deleteProductListing = async (productListingId: string) => {
